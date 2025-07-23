@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User Profile</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <h1>Update Profile</h1>
+  <form action="/update" method="POST">
+    <input type="hidden" name="id" value="{{id}}" />
+
+    <label>Name:</label>
+    <input type="text" name="name" value="{{name}}" required>
+
+    <label>Email:</label>
+    <input type="email" name="email" value="{{email}}" required>
+
+    <label>Hobbies:</label>
+    <input type="text" name="hobbies" value="{{hobbies}}">
+
+    <label>Location:</label>
+    <input type="text" name="location" value="{{location}}" required>
+
+    <button type="submit">Update</button>
+  </form>
+</body>
+</html>
