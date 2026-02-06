@@ -1,0 +1,32 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: compose-task
+spec:
+  params:
+    - name: COMPOSE_FILE
+      type: string
+      default: docker-compose.yaml
+  workspaces:
+    - name: source
+  steps:
+    - name: docker-compose-up
+      image: docker:26-cli
+      workingDir: $(workspaces.source.path)
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
+      script: |
+        #!/bin/sh
+        set -eux
+
+        docker version
+        docker compose version
+
+        docker compose -f $(params.COMPOSE_FILE) up -d
+  volumes:
+    - name: docker-sock
+      hostPath:
+        path: /var/run/docker.sock
