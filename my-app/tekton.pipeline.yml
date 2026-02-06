@@ -62,3 +62,7 @@ spec:
       params:
         - name: IMAGE
           value: $(params.image-reference)
+        - name:   CONTEXT
+          value: /workspace/source/my-app  
+        - name: DOCKERFILE
+          value: /workspace/source/my-app/Dockerfile
