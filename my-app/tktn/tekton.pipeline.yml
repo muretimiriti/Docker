@@ -10,11 +10,14 @@ spec:
     - name: repo-url
       type: string
       description: The git repo URL to clone from
-
+    - name: image-reference
+      type: string
+      description: The image reference to use for the show-readme task
   workspaces:
     - name: shared-data
       description: Workspace for cloned source code
-
+    - name: docker-credentials
+      description: Workspace for docker credentials
    
 
   tasks:
@@ -27,13 +30,19 @@ spec:
       workspaces:
         - name: output
           workspace: shared-data
-      
+  
 
-    - name: show-readme
-      runAfter:
-        - fetch-source
+    - name: build-push
+      runAfter: ["fetch-source"]
       taskRef:
-        name: show-readme
+       name: kaniko
       workspaces:
-        - name: source
-          workspace: shared-data
+      - name: source
+        workspace: shared-data
+      - name: dockerconfig
+        workspace: docker-credentials
+      params:
+      - name: IMAGE
+        value: $(params.image-reference)
+     
+    
