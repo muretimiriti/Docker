@@ -1,14 +1,26 @@
-apiVersion: tekton.dev/v1
+apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  generateName: compose-pipeline-run-
+  generateName: clone-read-run-
 spec:
   pipelineRef:
-    name: compose-pipeline
-  params:
-    - name: COMPOSE_FILE
-      value: docker-compose.yaml
+    name: clone-read
+  podTemplate:
+    securityContext:
+      fsGroup: 65532
+      
   workspaces:
-    - name: source
-      hostPath:
-        path: /home/mureti/Desktop/Devops/Docker/my-app
+  - name: shared-data
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+  - name: git-credentials
+    secret:
+      secretName: git-credentials
+  params:
+  - name: repo-url
+    value: https://github.com/muretimiriti/Docker.git
