@@ -73,7 +73,7 @@ MONGO_URI=mongodb://admin:admin123@mongo:27017/admin
 
 MongoDB credentials:
 
-Username: admin
+Username:
 
 Password: 
 
@@ -120,8 +120,7 @@ Notes
 
 This project is not intended for production use
 
-Credentials are hardcoded for simplicity
-
+Credentials should not be hardcoded rather secret key should be setup
 Docker Compose is used only for local development
 
 Tekton is used strictly for CI-style workflows, not runtime orchestration
