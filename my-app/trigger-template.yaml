@@ -1,7 +1,7 @@
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerTemplate
 metadata:
-  name: trigger-template
+  name: ci-pipeline-template
 spec:
   params:
     - name: gitrepositoryurl
