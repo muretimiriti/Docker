@@ -1,19 +1,11 @@
-apiVersion: triggers.tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
   name: github-push-binding
 spec:
   params:
-  - name: gitrepositoryurl
-    value: $(body.repository.url)
-  - name: gitrevision
-    value: $(body.head_commit.id)
-    
-  - name: gitref
-    value: $(body.ref)
-    
-  - name: gitrepositoryname
-    value: $(body.repository.name)
-    
-  - name: authorname
-    value: $(body.head_commit.author.name)
+    - name: repo-url
+      value: $(body.repository.clone_url)
+
+    - name: image-reference
+      value: muretimiriti/test1:$(body.after)
