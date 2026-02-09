@@ -4,53 +4,10 @@ metadata:
   name: event-listener
 spec:
   serviceAccountName: tekton-triggers-sa
-  triggers:
-    # Trigger for push events
-    - name: github-push-trigger
-      interceptors:
-        # GitHub interceptor validates the webhook
-        - ref:
-            name: github
-          params:
-            - name: secretRef
-              value:
-                secretName: github-webhook-secret
-                secretKey: secretToken
-            - name: eventTypes
-              value:
-                - push
-        # CEL interceptor for additional filtering
-        - ref:
-            name: cel
-          params:
-            - name: filter
-              value: body.ref.startsWith('refs/heads/main') || body.ref.startsWith('refs/heads/develop')
-      bindings:
-        - ref: github-push-binding
-      template:
-        ref: ci-pipeline-template
-    
-    # Trigger for pull request events
-    - name: github-pr-trigger
-      interceptors:
-        - ref:
-            name: github
-          params:
-            - name: secretRef
-              value:
-                secretName: github-webhook-secret
-                secretKey: secretToken
-            - name: eventTypes
-              value:
-                - pull_request
-        - ref:
-            name: cel
-          params:
-            - name: filter
-              value: body.action in ['opened', 'synchronize', 'reopened']
-      bindings:
-        - ref: github-push-binding
-      template:
-        ref: ci-pipeline-template
-
+triggers:
+- name: github-push-trigger
+  bindings:
+    - ref: github-push-binding
+  template:
+    ref: ci-pipeline-template
 

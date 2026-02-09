@@ -7,31 +7,30 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: tekton-triggers-role
+  namespace: default
 rules:
-  # EventListener needs to create PipelineRuns
-  - apiGroups: ["tekton.dev"]
-    resources: ["pipelineruns", "pipelineresources", "taskruns"]
-    verbs: ["create", "get", "list", "watch"]
-  # EventListener needs to create PVCs
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    verbs: ["create", "get", "list", "watch"]
-  # EventListener needs to read configmaps
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch"]
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns", "pipelines", "tasks", "taskruns"]
+  verbs: ["get","list","create","watch"]
+- apiGroups: [""]
+  resources: ["pods", "persistentvolumeclaims", "secrets", "configmaps"]
+  verbs: ["get","list","create","watch"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: tekton-triggers-rolebinding
+  name: tekton-triggers-binding
+  namespace: default
 subjects:
-  - kind: ServiceAccount
-    name: tekton-triggers-sa
+- kind: ServiceAccount
+  name: tekton-triggers-sa
+  namespace: default
 roleRef:
-  apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: tekton-triggers-role
+  apiGroup: rbac.authorization.k8s.io
+
 ---
 # ClusterRole for accessing ClusterTasks
 apiVersion: rbac.authorization.k8s.io/v1
