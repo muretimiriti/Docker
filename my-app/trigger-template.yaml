@@ -1,0 +1,32 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: trigger-template
+spec:
+  params:
+    - name: gitrepositoryurl
+      description: The git repository URL to clone
+    - name: gitrevision
+      description: The git revision to checkout
+    - name: gitref
+      description: The git ref to checkout
+    - name: gitrepositoryname
+      description: The git repository name to clone
+    - name : authorname
+      description: The author name to use for git commit
+      default: "unknown" 
+
+  resourcetemplates:
+       # Create a PersistentVolumeClaim for workspace
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: shared-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi  
+  
+  
