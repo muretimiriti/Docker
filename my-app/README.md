@@ -6,7 +6,7 @@ Node.js app
 
 Docker Compose setup
 
-MongoDB + Mongo Express
+MongoDB + Mongo Express + ngrok delivery 
 
 Tekton pipeline that clones and reads this file
 
