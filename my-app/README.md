@@ -1,6 +1,6 @@
 # My App
 
-This repository contains a simple Node.js application backed by MongoDB, orchestrated locally using Docker Compose and used to demonstrate Tekton Pipelines for CI workflows such as cloning a repository and reading files.
+This repository contains a simple Node.js application backed by MongoDB, orchestrated locally using Docker Compose, and used to demonstrate Tekton Pipelines for CI workflows such as cloning a repository and reading files.
 
 The project is intentionally minimal and designed for learning Docker, Kubernetes, and Tekton fundamentals.
 
@@ -144,7 +144,7 @@ docker ps
 
 The Node app connects to MongoDB using:
 
-MONGO_URI=mongodb://admin:admin123@mongo:27017/admin
+MONGO_URI=mongodb://admin
 
 
 MongoDB credentials:
