@@ -1,24 +1,100 @@
-
-
-Public GitHub repo
-
-Node.js app
-
-Docker Compose setup
-
-MongoDB + Mongo Express + ngrok delivery 
-
-Tekton pipeline that clones and reads this file
-
-
-
-My Node App – Docker & Tekton Demo
+# My App
 
 This repository contains a simple Node.js application backed by MongoDB, orchestrated locally using Docker Compose and used to demonstrate Tekton Pipelines for CI workflows such as cloning a repository and reading files.
 
 The project is intentionally minimal and designed for learning Docker, Kubernetes, and Tekton fundamentals.
 
-Project Structure
+## CI/CD Pipeline with Tekton
+
+### Tekton Triggers & EventListeners
+
+This project uses **Tekton Triggers** to automate CI/CD pipelines based on Git events.
+
+#### Setup EventListener
+
+```yaml
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: my-app-listener
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: github-push-trigger
+      interceptors:
+        - name: github
+          ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretKey: github-token
+                secretName: github-secret
+      bindings:
+        - ref: my-app-binding
+      template:
+        ref: my-app-template
+```
+
+#### Setup TriggerBinding
+
+```yaml
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: my-app-binding
+spec:
+  params:
+    - name: gitRepository
+      value: $(body.repository.clone_url)
+    - name: gitRevision
+      value: $(body.head_commit.id)
+    - name: gitBranch
+      value: $(body.ref)
+```
+
+#### Setup TriggerTemplate
+
+```yaml
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: my-app-template
+spec:
+  params:
+    - name: gitRepository
+    - name: gitRevision
+    - name: gitBranch
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: my-app-run-
+      spec:
+        pipelineRef:
+          name: my-app-pipeline
+        params:
+          - name: git-url
+            value: $(tt.params.gitRepository)
+          - name: git-revision
+            value: $(tt.params.gitRevision)
+```
+
+#### Configure GitHub Webhook
+
+1. Go to your GitHub repository Settings → Webhooks
+2. Add webhook with EventListener URL: `http://<event-listener-url>`
+3. Select events: `Push events` and `Pull requests`
+4. Content type: `application/json`
+
+#### Automation Features
+
+- **Auto-trigger on push**: Pipeline runs automatically on Git push
+- **Branch filtering**: Trigger specific pipelines per branch
+- **Interceptors**: Validate GitHub signatures and filter events
+- **PipelineRun generation**: Automatically creates pipeline executions
+
+## Project Structure
 .
 ├── docker-compose.yaml
 ├── Dockerfile
@@ -27,7 +103,7 @@ Project Structure
 │   └── index.js
 └── README.md
 
-Services Overview
+## Services Overview
 1. my-node-app
 
 Node.js application
@@ -54,7 +130,7 @@ Exposes port 8081
 
 Connects to the mongo service internally
 
-Docker Compose Setup
+## Docker Compose Setup
 Start all services
 docker-compose up -d
 
@@ -64,7 +140,7 @@ docker-compose down
 View running containers
 docker ps
 
-Environment Variables
+## Environment Variables
 
 The Node app connects to MongoDB using:
 
@@ -83,7 +159,7 @@ Node App: http://localhost:3000
 
 Mongo Express: http://localhost:8081
 
-Tekton Pipeline Usage
+## Tekton Pipeline Usage
 
 This repository is used by a Tekton Pipeline that:
 
@@ -101,7 +177,7 @@ Task dependencies
 
 Parameterized Git repository cloning
 
-Requirements
+## Requirements
 Local Development
 
 Docker
@@ -116,7 +192,7 @@ Tekton Pipelines installed
 
 Tekton git-clone Task installed
 
-Notes
+## Notes
 
 This project is not intended for production use
 
@@ -125,7 +201,7 @@ Docker Compose is used only for local development
 
 Tekton is used strictly for CI-style workflows, not runtime orchestration
 
-License
+## License
 
 MIT License
 
