@@ -49,6 +49,21 @@ spec:
         - name: source
           workspace: shared-data
 
+
+    - name: sca-scan
+      runAfter:
+        - debug-workspace
+      taskRef:
+        name: trivy-sca-scan
+      workspaces:
+        - name: source
+          workspace: shared-data 
+      params:
+        - name: IMAGE
+          value: $(params.image-reference)
+        - name: SEVERITY
+          value: "HIGH,CRITICAL"
+          
     - name: build-push
       runAfter:
         - debug-workspace
