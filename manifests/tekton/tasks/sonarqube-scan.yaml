@@ -1,0 +1,61 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: sonarqube-scan
+spec:
+  description: |
+    Run SonarQube scan using sonar-scanner CLI.
+    Expects SONAR_HOST_URL and SONAR_TOKEN to be provided (typically via a Kubernetes Secret).
+  params:
+    - name: WORKDIR
+      type: string
+      default: .
+    - name: PROJECT_KEY
+      type: string
+      default: my-app
+    - name: PROJECT_NAME
+      type: string
+      default: my-app
+    - name: SOURCES
+      type: string
+      default: .
+  workspaces:
+    - name: source
+      description: Cloned source
+    - name: cache
+      description: Cache workspace (optional, used for sonar cache)
+      optional: true
+  steps:
+    - name: sonar-scan
+      image: sonarsource/sonar-scanner-cli:5.0
+      env:
+        - name: SONAR_USER_HOME
+          value: /workspace/cache/sonar
+        - name: SONAR_HOST_URL
+          valueFrom:
+            secretKeyRef:
+              name: sonarqube-credentials
+              key: SONAR_HOST_URL
+              optional: true
+        - name: SONAR_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: sonarqube-credentials
+              key: SONAR_TOKEN
+              optional: true
+      workingDir: /workspace/source/$(params.WORKDIR)
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        if [ -z "${SONAR_HOST_URL:-}" ] || [ -z "${SONAR_TOKEN:-}" ]; then
+          echo "SONAR_HOST_URL/SONAR_TOKEN not provided (secret sonarqube-credentials). Skipping scan." >&2
+          exit 0
+        fi
+
+        sonar-scanner \
+          -Dsonar.host.url="$SONAR_HOST_URL" \
+          -Dsonar.login="$SONAR_TOKEN" \
+          -Dsonar.projectKey="$(params.PROJECT_KEY)" \
+          -Dsonar.projectName="$(params.PROJECT_NAME)" \
+          -Dsonar.sources="$(params.SOURCES)"
