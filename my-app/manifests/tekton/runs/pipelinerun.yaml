@@ -1,0 +1,34 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: clone-read-run-
+spec:
+  serviceAccountName: tekton-triggers-sa
+  pipelineRef:
+    name: tekton-trigger-listeners
+  podTemplate:
+    securityContext:
+      fsGroup: 65532
+      
+  workspaces:
+  - name: shared-data
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+  - name: docker-credentials
+    secret:
+      secretName: docker-credentials
+  - name: cache
+    persistentVolumeClaim:
+      claimName: tekton-cache-pvc
+  params:
+  - name: repo-url
+    value: https://github.com/REPLACE_ME/REPLACE_ME.git
+  - name: image-reference
+    value: REPLACE_ME/image:tag
+  - name: run-sonarqube
+    value: "false"

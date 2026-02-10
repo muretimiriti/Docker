@@ -99,8 +99,9 @@ spec:
 ├── docker-compose.yaml
 ├── Dockerfile
 ├── package.json
-├── src/
-│   └── index.js
+├── app.js
+├── server.js
+├── manifests/
 └── README.md
 
 ## Services Overview
@@ -201,22 +202,31 @@ Docker Compose is used only for local development
 
 Tekton is used strictly for CI-style workflows, not runtime orchestration
 
+## Manifests
+
+Kubernetes and Tekton YAML files are organized under `my-app/manifests/`.
+See `my-app/manifests/README.md` for apply order and details.
+
 ## Issues Found (Code Review)
 
 Reviewed on 2026-02-10.
 
+### Status (This Branch)
+
+Moved to `my-app/docs/status-this-branch.md` to avoid duplication/drift.
+
 ### Critical
 
-- Committed private SSH key in `my-app/secrets.yaml:8` (`ssh-privatekey`). Revoke/rotate immediately and remove it from git history.
-- Committed Docker registry credentials in `my-app/docker-credentials.yaml:6` (`config.json`). Rotate credentials and remove from git history.
+- Committed private SSH key in `my-app/manifests/tekton/secrets/git-ssh-secret.yaml:8` (`ssh-privatekey`). Revoke/rotate immediately and remove it from git history.
+- Committed Docker registry credentials in `my-app/manifests/tekton/secrets/docker-credentials.yaml:6` (`config.json`). Rotate credentials and remove from git history.
 - Committed and hardcoded passwords/credentials:
 - `my-app/.env:2` `my-app/.env:4` `my-app/.env:7`
 - `my-app/docker-compose.yaml:11`
-- `my-app/mongo-deployment.yaml:21` `my-app/mongo-deployment.yaml:24`
-- `my-app/mongo-express-deployment.yaml:21` `my-app/mongo-express-deployment.yaml:24`
-- `my-app/node-app-deployment.yaml:21`
-- Tekton EventListener manifest is invalid YAML structure: `my-app/event-listener.yaml:7` has `triggers:` at the top level, but it must be under `spec:` (Kubernetes will reject it).
-- Tekton PipelineRun references a pipeline that does not exist: `my-app/tekton.pipelinerun.yml:7` references `clone-read`, but the pipeline present is `tekton-trigger-listeners` in `my-app/tekton.pipeline.yml:4`.
+- `my-app/manifests/k8s/mongo/deployment.yaml:21` `my-app/manifests/k8s/mongo/deployment.yaml:24`
+- `my-app/manifests/k8s/mongo-express/deployment.yaml:21` `my-app/manifests/k8s/mongo-express/deployment.yaml:24`
+- `my-app/manifests/k8s/node-app/deployment.yaml:21`
+- Tekton EventListener manifest was invalid previously (top-level `triggers:`) but is fixed in this branch: `my-app/manifests/tekton/triggers/event-listener.yaml`.
+- Tekton PipelineRun referenced a non-existent pipeline previously but is fixed in this branch: `my-app/manifests/tekton/runs/pipelinerun.yaml`.
 
 ### High
 
@@ -236,8 +246,15 @@ Reviewed on 2026-02-10.
 
 ### Repo Hygiene / Docs
 
-- `my-app/node_modules/` is committed. This should be removed from git and added to `.gitignore`.
+- `my-app/node_modules/` was committed previously. It is now removed from git tracking and ignored via `.gitignore`.
 - README structure does not match the repo (README mentions `src/index.js`, but app entrypoint is `my-app/server.js`).
+
+## Testing
+
+From `my-app/`:
+
+- `npm test`
+- `npm run perf`
 
 ## License
 

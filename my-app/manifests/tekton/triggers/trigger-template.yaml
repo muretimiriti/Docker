@@ -1,0 +1,46 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: ci-pipeline-template
+spec:
+  params:
+    - name: repo-url
+    - name: image-reference
+    - name: run-sonarqube
+      default: "false"
+
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: tekton-trigger-listeners-run-
+
+      spec:
+        serviceAccountName: tekton-triggers-sa
+        pipelineRef:
+          name: tekton-trigger-listeners
+
+        params:
+          - name: repo-url
+            value: $(tt.params.repo-url)
+          - name: image-reference
+            value: $(tt.params.image-reference)
+          - name: run-sonarqube
+            value: $(tt.params.run-sonarqube)
+
+        workspaces:
+          - name: shared-data
+            volumeClaimTemplate:
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: 1Gi
+
+          - name: docker-credentials
+            secret:
+              secretName: docker-credentials
+
+          - name: cache
+            persistentVolumeClaim:
+              claimName: tekton-cache-pvc

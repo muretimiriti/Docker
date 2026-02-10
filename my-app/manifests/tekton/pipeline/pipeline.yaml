@@ -1,0 +1,133 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: tekton-trigger-listeners
+spec:
+  description: |
+    This pipeline clones a git repo and prints the README.
+
+  params:
+    - name: repo-url
+      type: string
+      description: The git repo URL to clone from
+
+    - name: image-reference
+      type: string
+      description: The image reference to build and push
+
+    - name: run-sonarqube
+      type: string
+      default: "false"
+      description: "Set to true to run SonarQube scan (requires sonarqube-credentials secret)"
+
+  workspaces:
+    - name: shared-data
+      description: Workspace for cloned source code
+
+    - name: docker-credentials
+      description: Workspace for docker credentials
+
+    - name: cache
+      description: Persistent cache workspace (npm cache, trivy cache, sonar cache)
+
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.repo-url)
+      workspaces:
+        - name: output
+          workspace: shared-data
+
+    - name: npm-test
+      runAfter:
+        - fetch-source
+      taskRef:
+        name: npm-test
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: cache
+          workspace: cache
+
+    - name: show-readme
+      runAfter:
+        - npm-test
+      taskRef:
+        name: show-readme
+      workspaces:
+        - name: source
+          workspace: shared-data
+
+    - name: debug-workspace
+      runAfter:
+        - show-readme
+      taskSpec:
+        workspaces:
+          - name: source
+        steps:
+          - name: list-workspace
+            image: alpine
+            script: |
+              echo "Workspace contents:"
+              ls -R /workspace
+      workspaces:
+        - name: source
+          workspace: shared-data
+
+
+    - name: sca-scan
+      runAfter:
+        - debug-workspace
+      taskRef:
+        name: trivy-sca-scan
+      workspaces:
+        - name: source
+          workspace: shared-data 
+        - name: cache
+          workspace: cache
+      params:
+        - name: SEVERITY
+          value: "HIGH,CRITICAL"
+        - name: SCAN_MODE
+          value: fs
+        - name: TARGET
+          value: my-app
+
+    - name: sonarqube-scan
+      runAfter:
+        - npm-test
+      when:
+        - input: "$(params.run-sonarqube)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: sonarqube-scan
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: cache
+          workspace: cache
+      params:
+        - name: WORKDIR
+          value: my-app
+
+    - name: build-push
+      runAfter:
+        - sca-scan
+      taskRef:
+        name: kaniko
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: docker-credentials
+      params:
+        - name: IMAGE
+          value: $(params.image-reference)
+        - name:   CONTEXT
+          value: my-app  
+        - name: DOCKERFILE
+          value: my-app/Dockerfile
