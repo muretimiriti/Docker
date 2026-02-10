@@ -201,6 +201,44 @@ Docker Compose is used only for local development
 
 Tekton is used strictly for CI-style workflows, not runtime orchestration
 
+## Issues Found (Code Review)
+
+Reviewed on 2026-02-10.
+
+### Critical
+
+- Committed private SSH key in `my-app/secrets.yaml:8` (`ssh-privatekey`). Revoke/rotate immediately and remove it from git history.
+- Committed Docker registry credentials in `my-app/docker-credentials.yaml:6` (`config.json`). Rotate credentials and remove from git history.
+- Committed and hardcoded passwords/credentials:
+- `my-app/.env:2` `my-app/.env:4` `my-app/.env:7`
+- `my-app/docker-compose.yaml:11`
+- `my-app/mongo-deployment.yaml:21` `my-app/mongo-deployment.yaml:24`
+- `my-app/mongo-express-deployment.yaml:21` `my-app/mongo-express-deployment.yaml:24`
+- `my-app/node-app-deployment.yaml:21`
+- Tekton EventListener manifest is invalid YAML structure: `my-app/event-listener.yaml:7` has `triggers:` at the top level, but it must be under `spec:` (Kubernetes will reject it).
+- Tekton PipelineRun references a pipeline that does not exist: `my-app/tekton.pipelinerun.yml:7` references `clone-read`, but the pipeline present is `tekton-trigger-listeners` in `my-app/tekton.pipeline.yml:4`.
+
+### High
+
+- Stored XSS risk: unescaped user input is injected into HTML in `my-app/server.js:58` through `my-app/server.js:66`. A user can store `<script>` in profile fields and it will execute on `/profile`.
+- Missing validation and incorrect error semantics:
+- Invalid Mongo ObjectId in `/profile` can produce a 500 via cast error from `User.findById` (`my-app/server.js:55`) instead of returning a 400.
+- `User.findByIdAndUpdate` does not run validators by default; updates are currently unvalidated (`my-app/server.js:79`).
+- No authentication/authorization: anyone can update any profile by posting an `id` (`my-app/server.js:75`).
+
+### Medium
+
+- `docker-compose` env wiring is incorrect for Mongo and Mongo Express (values are set to literal strings instead of actual values or `${VAR}` interpolation):
+- `my-app/docker-compose.yaml:24` `my-app/docker-compose.yaml:25`
+- `my-app/docker-compose.yaml:35` `my-app/docker-compose.yaml:36` `my-app/docker-compose.yaml:37` `my-app/docker-compose.yaml:38`
+- Dockerfile runs `nodemon` in the container (`my-app/Dockerfile:18`), and `nodemon` is in production dependencies (`my-app/package.json:17`). This is fine for local dev but not for production images.
+- Tests are not runnable: `my-app/package.json:6` exits 1 even though Jest is configured in `my-app/jest.config.js:5`.
+
+### Repo Hygiene / Docs
+
+- `my-app/node_modules/` is committed. This should be removed from git and added to `.gitignore`.
+- README structure does not match the repo (README mentions `src/index.js`, but app entrypoint is `my-app/server.js`).
+
 ## License
 
 MIT License
