@@ -1,0 +1,53 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: kaniko
+spec:
+  description: |
+    Minimal Kaniko build/push task (vendored) to avoid relying on cluster-installed catalog tasks.
+  params:
+    - name: IMAGE
+      type: string
+      description: Destination image reference
+    - name: CONTEXT
+      type: string
+      default: .
+      description: Build context directory under the source workspace
+    - name: DOCKERFILE
+      type: string
+      default: Dockerfile
+      description: Dockerfile path under the source workspace
+    - name: EXTRA_ARGS
+      type: string
+      default: ""
+  workspaces:
+    - name: source
+      description: Source workspace containing the Dockerfile
+    - name: dockerconfig
+      description: Workspace containing Docker config.json (for auth)
+  steps:
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        mkdir -p /kaniko/.docker
+        if [ -f /workspace/dockerconfig/config.json ]; then
+          cp /workspace/dockerconfig/config.json /kaniko/.docker/config.json
+        else
+          echo "Missing /workspace/dockerconfig/config.json (docker credentials)" >&2
+          exit 2
+        fi
+
+        /kaniko/executor \
+          --context "dir:///workspace/source/$(params.CONTEXT)" \
+          --dockerfile "/workspace/source/$(params.DOCKERFILE)" \
+          --destination "$(params.IMAGE)" \
+          --snapshotMode=redo \
+          --verbosity=info \
+          $(params.EXTRA_ARGS)
+

@@ -6,7 +6,10 @@
     "test": "node --test tests/**/*.test.js",
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "perf": "node perf/basic.js"
+    "perf": "node perf/basic.js",
+    "lint": "npx --yes eslint@8.57.0 \"**/*.js\"",
+    "format": "npx --yes prettier@3.3.3 -w .",
+    "format:check": "npx --yes prettier@3.3.3 -c ."
   },
   "keywords": [],
   "author": "",

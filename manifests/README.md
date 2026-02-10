@@ -31,3 +31,7 @@ Manual run (example):
 Runtime workloads:
 
 - `manifests/k8s/**`
+
+## Tekton Walkthrough
+
+See `docs/tekton-walkthrough.md` for a step-by-step guide (secrets, PVC, manual runs, triggers/webhooks).

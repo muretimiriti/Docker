@@ -111,12 +111,37 @@ Or run the project checks via script:
 ./scripts/tests.sh
 ```
 
+## Linting And Formatting
+
+Lint:
+
+```bash
+npm run lint
+```
+
+Format:
+
+```bash
+npm run format
+```
+
+Format check:
+
+```bash
+npm run format:check
+```
+
 ## Environment Variables
 
 Primary variables:
 
 - `PORT`: app port (default `3000`)
 - `MONGO_URI`: Mongo connection string (required)
+
+Optional update auth (recommended if you expose this publicly):
+
+- `UPDATE_BASIC_AUTH_USER`
+- `UPDATE_BASIC_AUTH_PASS`
 
 Mongo init variables (used by the Mongo container in Compose):
 
@@ -140,6 +165,7 @@ All Kubernetes and Tekton YAML files are organized under `manifests/`.
 - Tekton pipeline: `manifests/tekton/pipeline/pipeline.yaml`
 - Tekton triggers: `manifests/tekton/triggers/`
 - Tekton tasks (in-repo): `manifests/tekton/tasks/`
+- Walkthrough: `docs/tekton-walkthrough.md`
 
 ### SonarQube (Optional)
 
@@ -162,4 +188,3 @@ If the secret is missing, the task will skip (so the pipeline still runs).
 - `./scripts/start.sh`: brings up Docker Compose (`up --build`)
 - `./scripts/stop.sh`: brings down Docker Compose (`down`)
 - `./scripts/tests.sh`: runs `npm test` and `npm run perf`
-

@@ -32,6 +32,16 @@ services:
     volumes:
       - ./:/app
       - node_modules:/app/node_modules
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"const http=require('http');const req=http.get({host:'127.0.0.1',port:process.env.PORT||3000,path:'/healthz',timeout:2000},res=>process.exit(res.statusCode===200?0:1));req.on('error',()=>process.exit(1));\""
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     logging: *default_logging
 
   # Optional "production-like" app container:
