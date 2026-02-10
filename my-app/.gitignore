@@ -1,0 +1,4 @@
+docker-credentials.yaml
+secrets.yaml
+.env
+node_modules/
