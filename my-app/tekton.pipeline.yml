@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: clone-read
+  name: tekton-trigger-listeners
 spec:
   description: |
     This pipeline clones a git repo and prints the README.

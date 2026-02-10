@@ -11,10 +11,11 @@ spec:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
       metadata:
-        generateName: clone-read-run-
+        generateName: tekton-trigger-listeners-run-
+
       spec:
         pipelineRef:
-          name: clone-read
+          name: tekton-trigger-listeners
 
         params:
           - name: repo-url
