@@ -20,8 +20,6 @@ spec:
         echo "README:"
         if [ -f /workspace/source/README.md ]; then
           cat /workspace/source/README.md
-        elif [ -f /workspace/source/my-app/README.md ]; then
-          cat /workspace/source/my-app/README.md
         else
           echo "No README.md found under /workspace/source"
           find /workspace/source -maxdepth 3 -type f -iname 'readme*' -print

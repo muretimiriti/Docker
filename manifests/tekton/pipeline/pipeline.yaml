@@ -94,7 +94,7 @@ spec:
         - name: SCAN_MODE
           value: fs
         - name: TARGET
-          value: my-app
+          value: .
 
     - name: sonarqube-scan
       runAfter:
@@ -112,7 +112,7 @@ spec:
           workspace: cache
       params:
         - name: WORKDIR
-          value: my-app
+          value: .
 
     - name: build-push
       runAfter:
@@ -128,6 +128,6 @@ spec:
         - name: IMAGE
           value: $(params.image-reference)
         - name:   CONTEXT
-          value: my-app  
+          value: .
         - name: DOCKERFILE
-          value: my-app/Dockerfile
+          value: Dockerfile

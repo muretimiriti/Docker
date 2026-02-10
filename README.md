@@ -204,8 +204,8 @@ Tekton is used strictly for CI-style workflows, not runtime orchestration
 
 ## Manifests
 
-Kubernetes and Tekton YAML files are organized under `my-app/manifests/`.
-See `my-app/manifests/README.md` for apply order and details.
+Kubernetes and Tekton YAML files are organized under `manifests/`.
+See `manifests/README.md` for apply order and details.
 
 ## Issues Found (Code Review)
 
@@ -213,45 +213,45 @@ Reviewed on 2026-02-10.
 
 ### Status (This Branch)
 
-Moved to `my-app/docs/status-this-branch.md` to avoid duplication/drift.
+Moved to `docs/status-this-branch.md` to avoid duplication/drift.
 
 ### Critical
 
-- Committed private SSH key in `my-app/manifests/tekton/secrets/git-ssh-secret.yaml:8` (`ssh-privatekey`). Revoke/rotate immediately and remove it from git history.
-- Committed Docker registry credentials in `my-app/manifests/tekton/secrets/docker-credentials.yaml:6` (`config.json`). Rotate credentials and remove from git history.
+- Committed private SSH key in `manifests/tekton/secrets/git-ssh-secret.yaml:8` (`ssh-privatekey`). Revoke/rotate immediately and remove it from git history.
+- Committed Docker registry credentials in `manifests/tekton/secrets/docker-credentials.yaml:6` (`config.json`). Rotate credentials and remove from git history.
 - Committed and hardcoded passwords/credentials:
-- `my-app/.env:2` `my-app/.env:4` `my-app/.env:7`
-- `my-app/docker-compose.yaml:11`
-- `my-app/manifests/k8s/mongo/deployment.yaml:21` `my-app/manifests/k8s/mongo/deployment.yaml:24`
-- `my-app/manifests/k8s/mongo-express/deployment.yaml:21` `my-app/manifests/k8s/mongo-express/deployment.yaml:24`
-- `my-app/manifests/k8s/node-app/deployment.yaml:21`
-- Tekton EventListener manifest was invalid previously (top-level `triggers:`) but is fixed in this branch: `my-app/manifests/tekton/triggers/event-listener.yaml`.
-- Tekton PipelineRun referenced a non-existent pipeline previously but is fixed in this branch: `my-app/manifests/tekton/runs/pipelinerun.yaml`.
+- `.env:2` `.env:4` `.env:7`
+- `docker-compose.yaml:11`
+- `manifests/k8s/mongo/deployment.yaml:21` `manifests/k8s/mongo/deployment.yaml:24`
+- `manifests/k8s/mongo-express/deployment.yaml:21` `manifests/k8s/mongo-express/deployment.yaml:24`
+- `manifests/k8s/node-app/deployment.yaml:21`
+- Tekton EventListener manifest was invalid previously (top-level `triggers:`) but is fixed in this branch: `manifests/tekton/triggers/event-listener.yaml`.
+- Tekton PipelineRun referenced a non-existent pipeline previously but is fixed in this branch: `manifests/tekton/runs/pipelinerun.yaml`.
 
 ### High
 
-- Stored XSS risk: unescaped user input is injected into HTML in `my-app/server.js:58` through `my-app/server.js:66`. A user can store `<script>` in profile fields and it will execute on `/profile`.
+- Stored XSS risk: unescaped user input is injected into HTML in `server.js:58` through `server.js:66`. A user can store `<script>` in profile fields and it will execute on `/profile`.
 - Missing validation and incorrect error semantics:
-- Invalid Mongo ObjectId in `/profile` can produce a 500 via cast error from `User.findById` (`my-app/server.js:55`) instead of returning a 400.
-- `User.findByIdAndUpdate` does not run validators by default; updates are currently unvalidated (`my-app/server.js:79`).
-- No authentication/authorization: anyone can update any profile by posting an `id` (`my-app/server.js:75`).
+- Invalid Mongo ObjectId in `/profile` can produce a 500 via cast error from `User.findById` (`server.js:55`) instead of returning a 400.
+- `User.findByIdAndUpdate` does not run validators by default; updates are currently unvalidated (`server.js:79`).
+- No authentication/authorization: anyone can update any profile by posting an `id` (`server.js:75`).
 
 ### Medium
 
 - `docker-compose` env wiring is incorrect for Mongo and Mongo Express (values are set to literal strings instead of actual values or `${VAR}` interpolation):
-- `my-app/docker-compose.yaml:24` `my-app/docker-compose.yaml:25`
-- `my-app/docker-compose.yaml:35` `my-app/docker-compose.yaml:36` `my-app/docker-compose.yaml:37` `my-app/docker-compose.yaml:38`
-- Dockerfile runs `nodemon` in the container (`my-app/Dockerfile:18`), and `nodemon` is in production dependencies (`my-app/package.json:17`). This is fine for local dev but not for production images.
-- Tests are not runnable: `my-app/package.json:6` exits 1 even though Jest is configured in `my-app/jest.config.js:5`.
+- `docker-compose.yaml:24` `docker-compose.yaml:25`
+- `docker-compose.yaml:35` `docker-compose.yaml:36` `docker-compose.yaml:37` `docker-compose.yaml:38`
+- Dockerfile runs `nodemon` in the container (`Dockerfile:18`), and `nodemon` is in production dependencies (`package.json:17`). This is fine for local dev but not for production images.
+- Tests were not runnable previously (script exited 1). This is fixed in this branch via runnable `npm test`.
 
 ### Repo Hygiene / Docs
 
-- `my-app/node_modules/` was committed previously. It is now removed from git tracking and ignored via `.gitignore`.
-- README structure does not match the repo (README mentions `src/index.js`, but app entrypoint is `my-app/server.js`).
+- `node_modules/` was committed previously. It is now removed from git tracking and ignored via `.gitignore`.
+- README structure does not match the repo (README mentions `src/index.js`, but app entrypoint is `server.js`).
 
 ## Testing
 
-From `my-app/`:
+From the repo root:
 
 - `npm test`
 - `npm run perf`

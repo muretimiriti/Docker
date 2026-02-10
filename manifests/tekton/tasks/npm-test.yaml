@@ -8,7 +8,7 @@ spec:
   params:
     - name: WORKDIR
       type: string
-      default: my-app
+      default: .
       description: "Subdirectory containing package.json"
   workspaces:
     - name: source
@@ -30,4 +30,3 @@ spec:
         npm -v
         npm ci --prefer-offline --no-audit
         npm test
-

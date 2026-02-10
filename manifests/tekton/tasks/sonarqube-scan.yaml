@@ -9,7 +9,7 @@ spec:
   params:
     - name: WORKDIR
       type: string
-      default: my-app
+      default: .
     - name: PROJECT_KEY
       type: string
       default: my-app
@@ -59,4 +59,3 @@ spec:
           -Dsonar.projectKey="$(params.PROJECT_KEY)" \
           -Dsonar.projectName="$(params.PROJECT_NAME)" \
           -Dsonar.sources="$(params.SOURCES)"
-
