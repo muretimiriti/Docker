@@ -1,267 +1,165 @@
-# My App
+# Tech Stack Demo: Node.js + MongoDB + Docker + Tekton
 
-This repository contains a simple Node.js application backed by MongoDB, orchestrated locally using Docker Compose, and used to demonstrate Tekton Pipelines for CI workflows such as cloning a repository and reading files.
+This repository contains a small Express app backed by MongoDB, plus Docker Compose for local development and Tekton manifests for CI-style pipelines (clone, test, scan, build/push).
 
-The project is intentionally minimal and designed for learning Docker, Kubernetes, and Tekton fundamentals.
+## Tech Stack
 
-## CI/CD Pipeline with Tekton
+Application:
 
-### Tekton Triggers & EventListeners
+- Node.js (containerized)
+- Express (HTTP server)
+- Mongoose (MongoDB ODM)
+- HTML templates served as static files (simple string substitution)
 
-This project uses **Tekton Triggers** to automate CI/CD pipelines based on Git events.
+Data:
 
-#### Setup EventListener
+- MongoDB
+- mongo-express (optional UI)
 
-```yaml
-apiVersion: triggers.tekton.dev/v1beta1
-kind: EventListener
-metadata:
-  name: my-app-listener
-spec:
-  serviceAccountName: tekton-triggers-sa
-  triggers:
-    - name: github-push-trigger
-      interceptors:
-        - name: github
-          ref:
-            name: github
-          params:
-            - name: secretRef
-              value:
-                secretKey: github-token
-                secretName: github-secret
-      bindings:
-        - ref: my-app-binding
-      template:
-        ref: my-app-template
+Local Dev / Packaging:
+
+- Docker + Docker Compose
+- `scripts/start.sh`, `scripts/stop.sh`, `scripts/tests.sh`
+
+CI/CD:
+
+- Tekton Pipelines + Tekton Triggers (manifests in `manifests/tekton/`)
+- Trivy SCA scan task (in-repo)
+- SonarQube scan task (in-repo, optional via pipeline param)
+
+## Repo Layout
+
+- `app.js`: Express app factory (routes, HTML escaping, validation)
+- `server.js`: runtime entrypoint (Mongo connection + listen)
+- `models/`: Mongoose schemas
+- `views/`: HTML templates (`register.html`, `profile.html`)
+- `public/`: static assets (CSS)
+- `tests/`: Node-native tests (`node --test ...`)
+- `perf/`: lightweight perf check (`npm run perf`)
+- `manifests/`: Kubernetes and Tekton YAML (see `manifests/README.md`)
+- `scripts/`: helper scripts to run and stop the stack
+
+## Prerequisites
+
+Local development:
+
+- Docker Desktop (or Docker Engine)
+- Docker Compose (either `docker compose` or legacy `docker-compose`)
+
+Optional (non-Docker local run):
+
+- Node.js + npm
+- A reachable MongoDB instance
+
+## Quickstart (Recommended): Docker Compose
+
+1. Configure environment
+
+- Copy `.env.example` to `.env` and adjust values as needed.
+
+2. Start the stack
+
+```bash
+./scripts/start.sh
 ```
 
-#### Setup TriggerBinding
+3. Open services
 
-```yaml
-apiVersion: triggers.tekton.dev/v1beta1
-kind: TriggerBinding
-metadata:
-  name: my-app-binding
-spec:
-  params:
-    - name: gitRepository
-      value: $(body.repository.clone_url)
-    - name: gitRevision
-      value: $(body.head_commit.id)
-    - name: gitBranch
-      value: $(body.ref)
+- App: `http://localhost:3000`
+- Mongo Express: `http://localhost:8081`
+
+4. Stop the stack
+
+```bash
+./scripts/stop.sh
 ```
 
-#### Setup TriggerTemplate
+### Production-like Compose (Optional)
 
-```yaml
-apiVersion: triggers.tekton.dev/v1beta1
-kind: TriggerTemplate
-metadata:
-  name: my-app-template
-spec:
-  params:
-    - name: gitRepository
-    - name: gitRevision
-    - name: gitBranch
-  resourcetemplates:
-    - apiVersion: tekton.dev/v1beta1
-      kind: PipelineRun
-      metadata:
-        generateName: my-app-run-
-      spec:
-        pipelineRef:
-          name: my-app-pipeline
-        params:
-          - name: git-url
-            value: $(tt.params.gitRepository)
-          - name: git-revision
-            value: $(tt.params.gitRevision)
+The compose file includes a production-like profile that runs the app without bind-mounts:
+
+```bash
+docker compose --profile prod up --build
 ```
 
-#### Configure GitHub Webhook
+## Run Without Docker (Optional)
 
-1. Go to your GitHub repository Settings → Webhooks
-2. Add webhook with EventListener URL: `http://<event-listener-url>`
-3. Select events: `Push events` and `Pull requests`
-4. Content type: `application/json`
+Set `MONGO_URI` to a reachable MongoDB and run:
 
-#### Automation Features
+```bash
+npm install
+npm start
+```
 
-- **Auto-trigger on push**: Pipeline runs automatically on Git push
-- **Branch filtering**: Trigger specific pipelines per branch
-- **Interceptors**: Validate GitHub signatures and filter events
-- **PipelineRun generation**: Automatically creates pipeline executions
+## Tests And Checks
 
-## Project Structure
-.
-├── docker-compose.yaml
-├── Dockerfile
-├── package.json
-├── app.js
-├── server.js
-├── manifests/
-└── README.md
+Run unit/integration-style handler tests (no Mongo required):
 
-## Services Overview
-1. my-node-app
+```bash
+npm test
+```
 
-Node.js application
+Run the lightweight perf micro-benchmark:
 
-Built locally using Docker
+```bash
+npm run perf
+```
 
-Exposes port 3000
+Or run the project checks via script:
 
-Connects to MongoDB via internal Docker network
-
-2. mongo
-
-Official MongoDB image
-
-Uses a named volume for persistent storage
-
-Credentials configured via environment variables
-
-3. mongo-express
-
-Web UI for MongoDB
-
-Exposes port 8081
-
-Connects to the mongo service internally
-
-## Docker Compose Setup
-Start all services
-docker-compose up -d
-
-Stop all services
-docker-compose down
-
-View running containers
-docker ps
+```bash
+./scripts/tests.sh
+```
 
 ## Environment Variables
 
-The Node app connects to MongoDB using:
+Primary variables:
 
-MONGO_URI=mongodb://admin
+- `PORT`: app port (default `3000`)
+- `MONGO_URI`: Mongo connection string (required)
 
+Mongo init variables (used by the Mongo container in Compose):
 
-MongoDB credentials:
+- `MONGO_INITDB_ROOT_USERNAME`
+- `MONGO_INITDB_ROOT_PASSWORD`
+- `MONGO_INITDB_DATABASE`
 
-Username:
+mongo-express variables:
 
-Password: 
+- `MONGO_EXPRESS_PORT` (default `8081`)
+- `ME_CONFIG_MONGODB_URL` (defaults to a URL built from the Mongo init vars)
+- `ME_CONFIG_BASICAUTH` (defaults to `false`)
 
-Accessing 
+See `.env.example` for the full list and defaults.
 
-Node App: http://localhost:3000
+## Tekton / Kubernetes Manifests
 
-Mongo Express: http://localhost:8081
+All Kubernetes and Tekton YAML files are organized under `manifests/`.
 
-## Tekton Pipeline Usage
+- Apply order and notes: `manifests/README.md`
+- Tekton pipeline: `manifests/tekton/pipeline/pipeline.yaml`
+- Tekton triggers: `manifests/tekton/triggers/`
+- Tekton tasks (in-repo): `manifests/tekton/tasks/`
 
-This repository is used by a Tekton Pipeline that:
+### SonarQube (Optional)
 
-Clones the repository using the git-clone Task
+The SonarQube scan task is gated behind the pipeline param `run-sonarqube=true`.
 
-Mounts the source code into a shared workspace
+It expects a secret named `sonarqube-credentials` with:
 
-Reads and prints this README.md file using a follow-up Task
+- `SONAR_HOST_URL`
+- `SONAR_TOKEN`
 
-The Pipeline demonstrates:
+If the secret is missing, the task will skip (so the pipeline still runs).
 
-Workspace sharing
+## Security Notes (Important)
 
-Task dependencies
+- Do not commit real credentials. `.env` is ignored by git.
+- The Tekton secret manifests under `manifests/tekton/secrets/` contain placeholders and are not safe to commit with real values.
 
-Parameterized Git repository cloning
+## Scripts
 
-## Requirements
-Local Development
+- `./scripts/start.sh`: brings up Docker Compose (`up --build`)
+- `./scripts/stop.sh`: brings down Docker Compose (`down`)
+- `./scripts/tests.sh`: runs `npm test` and `npm run perf`
 
-Docker
-
-Docker Compose
-
-Kubernetes / Tekton
-
-Kubernetes cluster (e.g. Minikube)
-
-Tekton Pipelines installed
-
-Tekton git-clone Task installed
-
-## Notes
-
-This project is not intended for production use
-
-Credentials should not be hardcoded rather secret key should be setup
-Docker Compose is used only for local development
-
-Tekton is used strictly for CI-style workflows, not runtime orchestration
-
-## Manifests
-
-Kubernetes and Tekton YAML files are organized under `manifests/`.
-See `manifests/README.md` for apply order and details.
-
-## Issues Found (Code Review)
-
-Reviewed on 2026-02-10.
-
-### Status (This Branch)
-
-Moved to `docs/status-this-branch.md` to avoid duplication/drift.
-
-### Critical
-
-- Committed private SSH key in `manifests/tekton/secrets/git-ssh-secret.yaml:8` (`ssh-privatekey`). Revoke/rotate immediately and remove it from git history.
-- Committed Docker registry credentials in `manifests/tekton/secrets/docker-credentials.yaml:6` (`config.json`). Rotate credentials and remove from git history.
-- Committed and hardcoded passwords/credentials:
-- `.env:2` `.env:4` `.env:7`
-- `docker-compose.yaml:11`
-- `manifests/k8s/mongo/deployment.yaml:21` `manifests/k8s/mongo/deployment.yaml:24`
-- `manifests/k8s/mongo-express/deployment.yaml:21` `manifests/k8s/mongo-express/deployment.yaml:24`
-- `manifests/k8s/node-app/deployment.yaml:21`
-- Tekton EventListener manifest was invalid previously (top-level `triggers:`) but is fixed in this branch: `manifests/tekton/triggers/event-listener.yaml`.
-- Tekton PipelineRun referenced a non-existent pipeline previously but is fixed in this branch: `manifests/tekton/runs/pipelinerun.yaml`.
-
-### High
-
-- Stored XSS risk: unescaped user input is injected into HTML in `server.js:58` through `server.js:66`. A user can store `<script>` in profile fields and it will execute on `/profile`.
-- Missing validation and incorrect error semantics:
-- Invalid Mongo ObjectId in `/profile` can produce a 500 via cast error from `User.findById` (`server.js:55`) instead of returning a 400.
-- `User.findByIdAndUpdate` does not run validators by default; updates are currently unvalidated (`server.js:79`).
-- No authentication/authorization: anyone can update any profile by posting an `id` (`server.js:75`).
-
-### Medium
-
-- `docker-compose` env wiring is incorrect for Mongo and Mongo Express (values are set to literal strings instead of actual values or `${VAR}` interpolation):
-- `docker-compose.yaml:24` `docker-compose.yaml:25`
-- `docker-compose.yaml:35` `docker-compose.yaml:36` `docker-compose.yaml:37` `docker-compose.yaml:38`
-- Dockerfile runs `nodemon` in the container (`Dockerfile:18`), and `nodemon` is in production dependencies (`package.json:17`). This is fine for local dev but not for production images.
-- Tests were not runnable previously (script exited 1). This is fixed in this branch via runnable `npm test`.
-
-### Repo Hygiene / Docs
-
-- `node_modules/` was committed previously. It is now removed from git tracking and ignored via `.gitignore`.
-- README structure does not match the repo (README mentions `src/index.js`, but app entrypoint is `server.js`).
-
-## Testing
-
-From the repo root:
-
-- `npm test`
-- `npm run perf`
-
-## License
-
-MIT License
-
-If you want, the next logical step is to:
-
-Create the show-readme Tekton Task that reads this file
-
-Or evolve this into a proper build → image → deploy Tekton pipeline

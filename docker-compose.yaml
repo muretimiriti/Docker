@@ -1,50 +1,98 @@
-
+# Reusable defaults (Compose extension fields)
+x-logging: &default_logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
 
 services:
-  my-node-app:
+
+  my-node-app: &node_app
     image: my-node-app
     build:
       context: .
-    ports:
-      - 3000:3000
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
     env_file:
       - .env
     environment:
-      - MONGO_URI=${MONGO_URI}
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3000}
+      MONGO_URI: ${MONGO_URI}
     depends_on:
-      - mongo
-    command: npm run dev
-    develop:
-      watch:
-        - path: .
-          target: /app
-          action: sync
+      mongo:
+        condition: service_healthy
+    networks:
+      - appnet
+      - dbnet
+    ports:
+      - "${PORT:-3000}:3000"
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./:/app
+      - node_modules:/app/node_modules
+    logging: *default_logging
+
+  # Optional "production-like" app container:
+  # - no bind-mounts (immutable image)
+  # - runs `node server.js`
+  my-node-app-prod:
+    <<: *node_app
+    profiles: ["prod"]
+    command: ["node", "server.js"]
+    volumes: []
 
   mongo:
     image: mongo
-    restart: always
+    restart: unless-stopped
     env_file:
       - .env
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-admin123}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-admin}
     volumes:
       - mongo-data:/data/db
+    networks:
+      - dbnet
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username \"$MONGO_INITDB_ROOT_USERNAME\" --password \"$MONGO_INITDB_ROOT_PASSWORD\" --eval \"db.adminCommand('ping')\" \"$MONGO_INITDB_DATABASE\" >/dev/null"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    logging: *default_logging
 
   mongo-express:
     image: mongo-express
-    restart: always
-    ports:
-      - 8081:8081
+    restart: unless-stopped
     env_file:
       - .env
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${ME_CONFIG_MONGODB_ADMINUSERNAME}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${ME_CONFIG_MONGODB_ADMINPASSWORD}
-      ME_CONFIG_MONGODB_URL: ${ME_CONFIG_MONGODB_URL}
-      ME_CONFIG_BASICAUTH: ${ME_CONFIG_BASICAUTH}
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${ME_CONFIG_MONGODB_ADMINUSERNAME:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${ME_CONFIG_MONGODB_ADMINPASSWORD:-admin123}
+      ME_CONFIG_MONGODB_URL: ${ME_CONFIG_MONGODB_URL:-mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_INITDB_ROOT_PASSWORD:-admin123}@mongo:27017/${MONGO_INITDB_DATABASE:-admin}?authSource=admin}
+      ME_CONFIG_BASICAUTH: ${ME_CONFIG_BASICAUTH:-false}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - appnet
+      - dbnet
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+    logging: *default_logging
 
 volumes:
   mongo-data:
-   
-      
+  node_modules:
+
+networks:
+  appnet: {}
+  dbnet:
+    internal: true
