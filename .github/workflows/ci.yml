@@ -18,7 +18,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
           cache: "npm"
 
       - name: Install
@@ -35,4 +35,3 @@ jobs:
 
       - name: Audit (High/Critical)
         run: npm audit --audit-level=high --omit=dev
-
