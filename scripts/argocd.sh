@@ -117,7 +117,8 @@ install_argocd_if_requested() {
   [[ "$INSTALL_ARGOCD" == "true" ]] || return 0
   ensure_namespace "$ARGOCD_NAMESPACE"
   log "installing ArgoCD core components in namespace $ARGOCD_NAMESPACE"
-  kubectl apply -n "$ARGOCD_NAMESPACE" -f "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+  # Use server-side apply to avoid client-side last-applied annotation bloat on large CRDs.
+  kubectl apply --server-side -n "$ARGOCD_NAMESPACE" -f "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
 }
 
 ensure_argocd_crd() {
