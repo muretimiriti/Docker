@@ -1,47 +1,46 @@
-- apiVersion: tekton.dev/v1beta1
-  kind: Task
-  metadata:
-    name: git-clone
-  spec:
-    description: |
-      Minimal git clone task (vendored) to avoid relying on cluster-installed catalog tasks.
-    params:
-      - name: url
-        type: string
-        description: Repository URL
-      - name: revision
-        type: string
-        default: ""
-        description: Git revision (sha/branch/tag). If empty, uses default branch.
-      - name: depth
-        type: string
-        default: "1"
-        description: Clone depth
-      - name: submodules
-        type: string
-        default: "false"
-    workspaces:
-      - name: output
-        description: Workspace to clone into
-    steps:
-      - name: clone
-        image: alpine/git:2.45.2
-        script: |
-          #!/usr/bin/env sh
-          set -eu
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-clone
+spec:
+  description: |
+    Minimal git clone task (vendored) to avoid relying on cluster-installed catalog tasks.
+  params:
+    - name: url
+      type: string
+      description: Repository URL
+    - name: revision
+      type: string
+      default: ""
+      description: Git revision (sha/branch/tag). If empty, uses default branch.
+    - name: depth
+      type: string
+      default: "1"
+      description: Clone depth
+    - name: submodules
+      type: string
+      default: "false"
+  workspaces:
+    - name: output
+      description: Workspace to clone into
+  steps:
+    - name: clone
+      image: alpine/git:2.45.2
+      script: |
+        #!/usr/bin/env sh
+        set -eu
 
-          rm -rf /workspace/output/*
+        rm -rf /workspace/output/*
 
-          if [ -n "$(params.revision)" ]; then
-            git clone --depth "$(params.depth)" "$(params.url)" /workspace/output
-            cd /workspace/output
-            git checkout "$(params.revision)"
-          else
-            git clone --depth "$(params.depth)" "$(params.url)" /workspace/output
-          fi
+        if [ -n "$(params.revision)" ]; then
+          git clone --depth "$(params.depth)" "$(params.url)" /workspace/output
+          cd /workspace/output
+          git checkout "$(params.revision)"
+        else
+          git clone --depth "$(params.depth)" "$(params.url)" /workspace/output
+        fi
 
-          if [ "$(params.submodules)" = "true" ]; then
-            cd /workspace/output
-            git submodule update --init --recursive
-          fi
-
+        if [ "$(params.submodules)" = "true" ]; then
+          cd /workspace/output
+          git submodule update --init --recursive
+        fi

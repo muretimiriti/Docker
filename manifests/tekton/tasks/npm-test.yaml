@@ -1,32 +1,32 @@
-- apiVersion: tekton.dev/v1beta1
-  kind: Task
-  metadata:
-    name: npm-test
-  spec:
-    description: |
-      Install deps and run tests for the Node app. Uses a persistent cache workspace for npm cache.
-    params:
-      - name: WORKDIR
-        type: string
-        default: .
-        description: "Subdirectory containing package.json"
-    workspaces:
-      - name: source
-        description: Cloned source
-      - name: cache
-        description: Cache workspace (recommended)
-        optional: true
-    steps:
-      - name: install-test
-        image: node:24-alpine
-        env:
-          - name: NPM_CONFIG_CACHE
-            value: /workspace/cache/npm
-        workingDir: /workspace/source/$(params.WORKDIR)
-        script: |
-          #!/usr/bin/env sh
-          set -eu
-          node -v
-          npm -v
-          npm ci --prefer-offline --no-audit
-          npm test
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: npm-test
+spec:
+  description: |
+    Install deps and run tests for the Node app. Uses a persistent cache workspace for npm cache.
+  params:
+    - name: WORKDIR
+      type: string
+      default: .
+      description: "Subdirectory containing package.json"
+  workspaces:
+    - name: source
+      description: Cloned source
+    - name: cache
+      description: Cache workspace (recommended)
+      optional: true
+  steps:
+    - name: install-test
+      image: node:24-alpine
+      env:
+        - name: NPM_CONFIG_CACHE
+          value: /workspace/cache/npm
+      workingDir: /workspace/source/$(params.WORKDIR)
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+        node -v
+        npm -v
+        npm ci --prefer-offline --no-audit
+        npm test
