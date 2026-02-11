@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - mongo/deployment.yaml
+  - mongo/service.yaml
+  - mongo/pvc.yaml
+  - mongo-express/deployment.yaml
+  - mongo-express/service.yaml
+  - node-app/deployment.yaml
+  - node-app/service.yaml
+
+images:
+  - name: my-node-app
+    newName: my-node-app
+    newTag: local
