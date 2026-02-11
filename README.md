@@ -167,6 +167,30 @@ All Kubernetes and Tekton YAML files are organized under `manifests/`.
 - Tekton tasks (in-repo): `manifests/tekton/tasks/`
 - Walkthrough: `docs/tekton-walkthrough.md`
 
+### Automated Tekton Setup
+
+Use the setup script to install Tekton (pipelines/triggers), create required secrets, and apply all Tekton manifests:
+
+```bash
+./scripts/tekton.sh
+```
+
+Required for registry push:
+
+- A valid Docker login config at `$HOME/.docker/config.json` (or set `DOCKER_CONFIG_JSON` to another path).
+
+Optional inputs:
+
+- `SONAR_HOST_URL` + `SONAR_TOKEN` to create `sonarqube-credentials`
+- `SSH_PRIVATE_KEY_PATH` + `SSH_KNOWN_HOSTS_PATH` to create `ssh-key` (for private SSH git clones)
+- `TEKTON_NAMESPACE` to target a non-default namespace
+
+Useful flags:
+
+- `--skip-install`: skip Tekton Pipelines/Triggers install (if already installed)
+- `--skip-triggers`: skip trigger manifests
+- `--namespace <name>`: override namespace for this run
+
 ### SonarQube (Optional)
 
 The SonarQube scan task is gated behind the pipeline param `run-sonarqube=true`.
@@ -188,3 +212,4 @@ If the secret is missing, the task will skip (so the pipeline still runs).
 - `./scripts/start.sh`: brings up Docker Compose (`up --build`)
 - `./scripts/stop.sh`: brings down Docker Compose (`down`)
 - `./scripts/tests.sh`: runs `npm test` and `npm run perf`
+- `./scripts/tekton.sh`: automates Tekton install + manifests + secret setup
