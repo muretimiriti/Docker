@@ -1,8 +1,10 @@
-apiVersion: tekton.dev/v1beta1
-kind: Task
-metadata:
+- apiVersion: tekton.dev/v1beta1
+  kind: Task
+  metadata:
   name: show-readme
-spec:
+  description: |
+    Show README.md content in workspace source.
+  spec:
   workspaces:
     - name: source
   steps:
