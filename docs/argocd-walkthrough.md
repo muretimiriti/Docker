@@ -112,3 +112,34 @@ kubectl -n default get deployment my-node-app \
 ```bash
 kubectl -n argocd describe application tech-stack
 ```
+
+## Access ArgoCD Tools
+
+### ArgoCD Web UI
+
+Port-forward the ArgoCD API/UI service:
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8080:443
+```
+
+Open:
+
+- `https://localhost:8080`
+
+Default login:
+
+- username: `admin`
+- password command:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 --decode; echo
+```
+
+### ArgoCD Application Status via kubectl
+
+```bash
+kubectl -n argocd get applications.argoproj.io
+kubectl -n argocd get application tech-stack -o yaml
+```

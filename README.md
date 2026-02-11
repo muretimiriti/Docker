@@ -170,7 +170,7 @@ All Kubernetes and Tekton YAML files are organized under `manifests/`.
 
 ### Automated Tekton Setup
 
-Use the setup script to install Tekton (pipelines/triggers), create required secrets, and apply all Tekton manifests:
+Use the setup script to install Tekton (pipelines/triggers/dashboard), create required secrets, and apply all Tekton manifests:
 
 ```bash
 ./scripts/tekton.sh
@@ -188,9 +188,18 @@ Optional inputs:
 
 Useful flags:
 
-- `--skip-install`: skip Tekton Pipelines/Triggers install (if already installed)
+- `--skip-install`: skip Tekton Pipelines/Triggers/Dashboard install (if already installed)
+- `--skip-dashboard`: skip Tekton Dashboard UI install
 - `--skip-triggers`: skip trigger manifests
 - `--namespace <name>`: override namespace for this run
+
+Tekton Dashboard UI (if installed):
+
+```bash
+kubectl -n tekton-pipelines port-forward svc/tekton-dashboard 9097:9097
+```
+
+Then open `http://localhost:9097`.
 
 ### SonarQube (Optional)
 
@@ -226,6 +235,15 @@ Useful flags:
 - `--no-wait`: skip rollout wait
 
 Default ArgoCD app path is `manifests/k8s`, which now includes a `kustomization.yaml` so image overrides are applied cleanly.
+
+ArgoCD Web UI access:
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8080:443
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode; echo
+```
+
+Then open `https://localhost:8080` and log in as `admin`.
 
 ## Security Notes (Important)
 
