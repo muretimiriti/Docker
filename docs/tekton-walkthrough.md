@@ -145,3 +145,28 @@ curl -X POST http://localhost:8080 \
 - The pipeline uses `serviceAccountName: tekton-triggers-sa` in the `PipelineRun` specs.
 - For real production use, do not keep secret manifests in git; use external secrets or sealed secrets.
 
+## Access Tekton Tools
+
+### Tekton Dashboard UI
+
+If Tekton Dashboard is installed, port-forward and open it locally:
+
+```bash
+kubectl -n tekton-pipelines port-forward svc/tekton-dashboard 9097:9097
+```
+
+Open:
+
+- `http://localhost:9097`
+
+### Tekton Triggers EventListener Endpoint
+
+To reach the EventListener webhook endpoint locally:
+
+```bash
+kubectl -n default port-forward svc/el-event-listener 8080:8080
+```
+
+Then use:
+
+- `http://localhost:8080`

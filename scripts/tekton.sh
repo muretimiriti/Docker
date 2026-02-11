@@ -7,18 +7,20 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NAMESPACE="${TEKTON_NAMESPACE:-default}"
 INSTALL_TEKTON="true"
 APPLY_TRIGGERS="true"
+INSTALL_DASHBOARD="true"
 
 usage() {
   cat <<'USAGE'
 Usage: ./scripts/tekton.sh [options]
 
 Automates Tekton setup for this repository:
-- Optionally installs Tekton Pipelines + Triggers
+- Optionally installs Tekton Pipelines + Triggers + Dashboard UI
 - Applies RBAC, PVC, Tasks, Pipeline, and Triggers manifests
 - Creates/updates required Kubernetes secrets from local/env values
 
 Options:
-  --skip-install         Skip installing Tekton Pipelines/Triggers
+  --skip-install         Skip installing Tekton Pipelines/Triggers/Dashboard
+  --skip-dashboard       Install Pipelines/Triggers but skip Tekton Dashboard UI install
   --skip-triggers        Do not apply trigger manifests
   --namespace <name>     Kubernetes namespace to target (default: TEKTON_NAMESPACE or default)
   -h, --help             Show this help message
@@ -46,6 +48,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-install)
       INSTALL_TEKTON="false"
+      shift
+      ;;
+    --skip-dashboard)
+      INSTALL_DASHBOARD="false"
       shift
       ;;
     --skip-triggers)
@@ -108,6 +114,13 @@ install_tekton_components() {
 
   log "installing Tekton Triggers interceptors (latest)"
   kubectl apply -f "https://storage.googleapis.com/tekton-releases/triggers/latest/interceptors.yaml"
+
+  if [[ "$INSTALL_DASHBOARD" == "true" ]]; then
+    log "installing Tekton Dashboard UI (latest)"
+    kubectl apply -f "https://storage.googleapis.com/tekton-releases/dashboard/latest/release-full.yaml"
+  else
+    log "skipping Tekton Dashboard UI install"
+  fi
 
   wait_for_tekton_crds
 }
@@ -192,7 +205,7 @@ ensure_ssh_secret_if_configured() {
   k annotate secret ssh-key tekton.dev/git-0=github.com --overwrite
 }
 
-log "starting setup (namespace=$NAMESPACE, install_tekton=$INSTALL_TEKTON, apply_triggers=$APPLY_TRIGGERS)"
+log "starting setup (namespace=$NAMESPACE, install_tekton=$INSTALL_TEKTON, install_dashboard=$INSTALL_DASHBOARD, apply_triggers=$APPLY_TRIGGERS)"
 
 ensure_namespace
 
@@ -227,3 +240,7 @@ log "setup complete"
 log "optional sanity checks:"
 log "  kubectl -n $NAMESPACE get pipelines,tasks,pipelineruns,eventlisteners"
 log "  kubectl -n $NAMESPACE get secret docker-credentials"
+if [[ "$INSTALL_DASHBOARD" == "true" ]]; then
+  log "  kubectl -n tekton-pipelines port-forward svc/tekton-dashboard 9097:9097"
+  log "  open http://localhost:9097"
+fi
