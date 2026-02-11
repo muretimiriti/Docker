@@ -44,4 +44,3 @@
             cd /workspace/output
             git submodule update --init --recursive
           fi
-
