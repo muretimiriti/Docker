@@ -1,77 +1,77 @@
-- apiVersion: tekton.dev/v1beta1
-  kind: Task
-  metadata:
-    name: trivy-sca-scan
-  spec:
-    description: |
-      Trivy scan for filesystem source or image. Uses a shared cache workspace when provided.
-    params:
-      - name: SCAN_MODE
-        type: string
-        default: fs
-        description: "fs (scan workspace) or image (scan container image)"
-      - name: TARGET
-        type: string
-        default: .
-        description: "Filesystem target when SCAN_MODE=fs"
-      - name: IMAGE
-        type: string
-        default: ""
-        description: "Image reference when SCAN_MODE=image"
-      - name: SEVERITY
-        type: string
-        default: "HIGH,CRITICAL"
-      - name: FAIL_ON_SEVERITY
-        type: string
-        default: "true"
-        description: "When true, Trivy exits non-zero on findings in SEVERITY"
-    workspaces:
-      - name: source
-        description: Source workspace (required for fs scans)
-        optional: true
-      - name: cache
-        description: Cache workspace (recommended)
-        optional: true
-    steps:
-      - name: trivy
-        image: aquasec/trivy:0.62.0
-        env:
-          - name: TRIVY_CACHE_DIR
-            value: /workspace/cache/trivy
-        script: |
-          #!/usr/bin/env sh
-          set -eu
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: trivy-sca-scan
+spec:
+  description: |
+    Trivy scan for filesystem source or image. Uses a shared cache workspace when provided.
+  params:
+    - name: SCAN_MODE
+      type: string
+      default: fs
+      description: "fs (scan workspace) or image (scan container image)"
+    - name: TARGET
+      type: string
+      default: .
+      description: "Filesystem target when SCAN_MODE=fs"
+    - name: IMAGE
+      type: string
+      default: ""
+      description: "Image reference when SCAN_MODE=image"
+    - name: SEVERITY
+      type: string
+      default: "HIGH,CRITICAL"
+    - name: FAIL_ON_SEVERITY
+      type: string
+      default: "true"
+      description: "When true, Trivy exits non-zero on findings in SEVERITY"
+  workspaces:
+    - name: source
+      description: Source workspace (required for fs scans)
+      optional: true
+    - name: cache
+      description: Cache workspace (recommended)
+      optional: true
+  steps:
+    - name: trivy
+      image: aquasec/trivy:0.62.0
+      env:
+        - name: TRIVY_CACHE_DIR
+          value: /workspace/cache/trivy
+      script: |
+        #!/usr/bin/env sh
+        set -eu
 
-          if [ "$(params.FAIL_ON_SEVERITY)" = "true" ]; then
-            EXIT="1"
-          else
-            EXIT="0"
-          fi
+        if [ "$(params.FAIL_ON_SEVERITY)" = "true" ]; then
+          EXIT="1"
+        else
+          EXIT="0"
+        fi
 
-          if [ "$(params.SCAN_MODE)" = "image" ]; then
-            if [ -z "$(params.IMAGE)" ]; then
-              echo "IMAGE param is required when SCAN_MODE=image" >&2
-              exit 2
-            fi
-            trivy image \
-              --cache-dir "$TRIVY_CACHE_DIR" \
-              --severity "$(params.SEVERITY)" \
-              --exit-code "$EXIT" \
-              --no-progress \
-              "$(params.IMAGE)"
-            exit 0
-          fi
-
-          # Default: filesystem scan
-          if [ ! -d /workspace/source ]; then
-            echo "Workspace 'source' not mounted; cannot run fs scan" >&2
+        if [ "$(params.SCAN_MODE)" = "image" ]; then
+          if [ -z "$(params.IMAGE)" ]; then
+            echo "IMAGE param is required when SCAN_MODE=image" >&2
             exit 2
           fi
-
-          cd /workspace/source
-          trivy fs \
+          trivy image \
             --cache-dir "$TRIVY_CACHE_DIR" \
             --severity "$(params.SEVERITY)" \
             --exit-code "$EXIT" \
             --no-progress \
-            "$(params.TARGET)"
+            "$(params.IMAGE)"
+          exit 0
+        fi
+
+        # Default: filesystem scan
+        if [ ! -d /workspace/source ]; then
+          echo "Workspace 'source' not mounted; cannot run fs scan" >&2
+          exit 2
+        fi
+
+        cd /workspace/source
+        trivy fs \
+          --cache-dir "$TRIVY_CACHE_DIR" \
+          --severity "$(params.SEVERITY)" \
+          --exit-code "$EXIT" \
+          --no-progress \
+          "$(params.TARGET)"
