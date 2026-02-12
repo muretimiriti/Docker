@@ -120,7 +120,7 @@ kubectl apply -f manifests/tekton/triggers/event-listener.yaml
 
 ### 7.2 Expose the EventListener
 
-For local clusters you can port-forward:
+For local clusters you can port-forward:kubectl -n tekton-pipelines port-forward svc/tekton-dashboard 9097:9097
 
 ```bash
 kubectl port-forward svc/el-event-listener 8080:8080
