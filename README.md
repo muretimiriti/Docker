@@ -69,7 +69,7 @@ Optional (non-Docker local run):
 - App: `http://localhost:3000`
 - Mongo Express: `http://localhost:8081`
 
-4. Stop the stack
+4. Stop the stack.
 
 ```bash
 ./scripts/stop.sh
