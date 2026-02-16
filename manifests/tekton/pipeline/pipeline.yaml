@@ -4,7 +4,8 @@ metadata:
   name: tekton-trigger-listeners
 spec:
   description: |
-    This pipeline clones a git repo and prints the README.
+    This pipeline clones a git repo, runs tests, scans, and builds a Docker image.
+    Cache is managed sequentially to avoid PVC binding conflicts.
 
   params:
     - name: repo-url
@@ -18,19 +19,21 @@ spec:
     - name: run-sonarqube
       type: string
       default: "false"
-      description: "Set to true to run SonarQube scan (requires sonarqube-credentials secret)"
+      description: "Set to true to run SonarQube scan"
 
   workspaces:
     - name: shared-data
       description: Workspace for cloned source code
-
     - name: docker-credentials
       description: Workspace for docker credentials
-
     - name: cache
-      description: Persistent cache workspace (npm cache, trivy cache, sonar cache)
+      description: Persistent cache workspace (npm, trivy, sonar)
 
   tasks:
+    # ─────────────────────────────────────────
+    # STAGE 1: Clone source code
+    # Workspaces: shared-data only
+    # ─────────────────────────────────────────
     - name: fetch-source
       taskRef:
         name: git-clone
@@ -39,19 +42,94 @@ spec:
           value: $(params.repo-url)
       workspaces:
         - name: output
-          workspace: shared-data
+          workspace: shared-data        # ← shared-data ONLY
 
-    - name: npm-test
+    # ─────────────────────────────────────────
+    # STAGE 2: Restore cache to shared-data
+    # Workspaces: shared-data + cache
+    # Cache is mounted HERE first
+    # ─────────────────────────────────────────
+    - name: restore-cache
       runAfter:
         - fetch-source
-      taskRef:
-        name: npm-test
+      taskSpec:
+        workspaces:
+          - name: source
+          - name: cache
+        steps:
+          - name: restore
+            image: alpine
+            script: |
+              #!/bin/sh
+              set -e
+
+              echo "=========================================="
+              echo "🔄 Restoring cache..."
+              echo "=========================================="
+
+              # Restore node_modules
+              if [ -d "$(workspaces.cache.path)/node_modules" ]; then
+                echo "✅ Cache hit! Restoring node_modules..."
+                cp -r $(workspaces.cache.path)/node_modules \
+                      $(workspaces.source.path)/node_modules
+              else
+                echo "⚠️  Cache miss - node_modules not cached"
+              fi
+
+              # Restore npm cache
+              if [ -d "$(workspaces.cache.path)/.npm" ]; then
+                echo "✅ Cache hit! Restoring .npm cache..."
+                cp -r $(workspaces.cache.path)/.npm \
+                      $(workspaces.source.path)/.npm
+              else
+                echo "⚠️  Cache miss - .npm not cached"
+              fi
+
+              # Restore trivy cache
+              if [ -d "$(workspaces.cache.path)/.trivy" ]; then
+                echo "✅ Cache hit! Restoring trivy cache..."
+                cp -r $(workspaces.cache.path)/.trivy \
+                      $(workspaces.source.path)/.trivy
+              else
+                echo "⚠️  Cache miss - trivy cache not found"
+              fi
+
+              # Restore sonar cache
+              if [ -d "$(workspaces.cache.path)/.sonar" ]; then
+                echo "✅ Cache hit! Restoring sonar cache..."
+                cp -r $(workspaces.cache.path)/.sonar \
+                      $(workspaces.source.path)/.sonar
+              else
+                echo "⚠️  Cache miss - sonar cache not found"
+              fi
+
+              echo "=========================================="
+              echo "✅ Cache restore complete"
+              echo "=========================================="
       workspaces:
         - name: source
           workspace: shared-data
         - name: cache
-          workspace: cache
+          workspace: cache              # ← cache mounted here ONLY
 
+    # ─────────────────────────────────────────
+    # STAGE 3: Run npm tests
+    # Workspaces: shared-data ONLY
+    # cache PVC is RELEASED after restore-cache
+    # ─────────────────────────────────────────
+    - name: npm-test
+      runAfter:
+        - restore-cache
+      taskRef:
+        name: npm-test
+      workspaces:
+        - name: source
+          workspace: shared-data        # ← shared-data ONLY
+
+    # ─────────────────────────────────────────
+    # STAGE 4: Show README
+    # Workspaces: shared-data ONLY
+    # ─────────────────────────────────────────
     - name: show-readme
       runAfter:
         - npm-test
@@ -59,8 +137,12 @@ spec:
         name: show-readme
       workspaces:
         - name: source
-          workspace: shared-data
+          workspace: shared-data        # ← shared-data ONLY
 
+    # ─────────────────────────────────────────
+    # STAGE 5: Debug workspace
+    # Workspaces: shared-data ONLY
+    # ─────────────────────────────────────────
     - name: debug-workspace
       runAfter:
         - show-readme
@@ -75,19 +157,18 @@ spec:
               ls -R /workspace
       workspaces:
         - name: source
-          workspace: shared-data
+          workspace: shared-data        # ← shared-data ONLY
 
-
+    # ─────────────────────────────────────────
+    # STAGE 6: SCA Scan
+    # Workspaces: shared-data ONLY
+    # Uses trivy cache copied to shared-data
+    # ─────────────────────────────────────────
     - name: sca-scan
       runAfter:
         - debug-workspace
       taskRef:
         name: trivy-sca-scan
-      workspaces:
-        - name: source
-          workspace: shared-data 
-        - name: cache
-          workspace: cache
       params:
         - name: SEVERITY
           value: "HIGH,CRITICAL"
@@ -95,7 +176,15 @@ spec:
           value: fs
         - name: TARGET
           value: .
+      workspaces:
+        - name: source
+          workspace: shared-data        # ← shared-data ONLY
 
+    # ─────────────────────────────────────────
+    # STAGE 7: SonarQube scan (conditional)
+    # Workspaces: shared-data ONLY
+    # Uses sonar cache copied to shared-data
+    # ─────────────────────────────────────────
     - name: sonarqube-scan
       runAfter:
         - npm-test
@@ -105,29 +194,103 @@ spec:
           values: ["true"]
       taskRef:
         name: sonarqube-scan
+      params:
+        - name: WORKDIR
+          value: .
+      workspaces:
+        - name: source
+          workspace: shared-data        # ← shared-data ONLY
+
+    # ─────────────────────────────────────────
+    # STAGE 8: Save cache back
+    # Workspaces: shared-data + cache
+    # Cache is mounted HERE again AFTER all tasks
+    # that needed it are done
+    # ─────────────────────────────────────────
+    - name: save-cache
+      runAfter:
+        - sca-scan
+        - sonarqube-scan
+      taskSpec:
+        workspaces:
+          - name: source
+          - name: cache
+        steps:
+          - name: save
+            image: alpine
+            script: |
+              #!/bin/sh
+              set -e
+
+              echo "=========================================="
+              echo "💾 Saving cache..."
+              echo "=========================================="
+
+              # Save node_modules
+              if [ -d "$(workspaces.source.path)/node_modules" ]; then
+                echo "Saving node_modules..."
+                rm -rf $(workspaces.cache.path)/node_modules
+                cp -r $(workspaces.source.path)/node_modules \
+                      $(workspaces.cache.path)/node_modules
+                echo "✅ node_modules saved"
+              fi
+
+              # Save npm cache
+              if [ -d "$(workspaces.source.path)/.npm" ]; then
+                echo "Saving .npm cache..."
+                rm -rf $(workspaces.cache.path)/.npm
+                cp -r $(workspaces.source.path)/.npm \
+                      $(workspaces.cache.path)/.npm
+                echo "✅ .npm cache saved"
+              fi
+
+              # Save trivy cache
+              if [ -d "$(workspaces.source.path)/.trivy" ]; then
+                echo "Saving trivy cache..."
+                rm -rf $(workspaces.cache.path)/.trivy
+                cp -r $(workspaces.source.path)/.trivy \
+                      $(workspaces.cache.path)/.trivy
+                echo "✅ trivy cache saved"
+              fi
+
+              # Save sonar cache
+              if [ -d "$(workspaces.source.path)/.sonar" ]; then
+                echo "Saving sonar cache..."
+                rm -rf $(workspaces.cache.path)/.sonar
+                cp -r $(workspaces.source.path)/.sonar \
+                      $(workspaces.cache.path)/.sonar
+                echo "✅ sonar cache saved"
+              fi
+
+              echo "=========================================="
+              echo "Cache contents:"
+              du -sh $(workspaces.cache.path)/* 2>/dev/null || echo "Cache empty"
+              echo "✅ Cache save complete"
+              echo "=========================================="
       workspaces:
         - name: source
           workspace: shared-data
         - name: cache
-          workspace: cache
-      params:
-        - name: WORKDIR
-          value: .
+          workspace: cache              # ← cache mounted here ONLY
 
+    # ─────────────────────────────────────────
+    # STAGE 9: Build and push image
+    # Workspaces: shared-data + docker-credentials
+    # ─────────────────────────────────────────
     - name: build-push
       runAfter:
-        - sca-scan
+        - save-cache
       taskRef:
         name: kaniko
-      workspaces:
-        - name: source
-          workspace: shared-data
-        - name: dockerconfig
-          workspace: docker-credentials
       params:
         - name: IMAGE
           value: $(params.image-reference)
-        - name:   CONTEXT
+        - name: CONTEXT
           value: .
         - name: DOCKERFILE
           value: Dockerfile
+      workspaces:
+        - name: source
+          workspace: shared-data        # ← shared-data ONLY
+        - name: dockerconfig
+          workspace: docker-credentials # ← Secret, not PVC
