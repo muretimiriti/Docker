@@ -124,7 +124,7 @@ All other tasks only use `shared-data` (a fresh PVC per run via `volumeClaimTemp
 ```
 WORKSPACE TYPE       PURPOSE                     LIFECYCLE
 ─────────────────────────────────────────────────────────────
-shared-data          Source code, copied cache   Fresh per run (volumeClaimTemplate)
+shared-data          Source code, copied cache,   Fresh per run (volumeClaimTemplate)
 docker-credentials   Docker auth                 Kubernetes Secret (no PVC)
 cache                npm, trivy, sonar cache     Persistent across runs (PVC)
 ```
@@ -142,7 +142,7 @@ cache                npm, trivy, sonar cache     Persistent across runs (PVC)
 │                                                              │
 │  Stage 1: fetch-source                                       │
 │  Workspaces: [shared-data]                                   │
-│  → Clones git repository into shared-data                    │
+│  → Clones the git repository into shared-data                    │
 │                         │                                    │
 │                         ▼                                    │
 │  Stage 2: restore-cache                                      │
@@ -278,7 +278,7 @@ coschedule: "disabled"
 
 **Use Case:** Small team, single server deployment (e.g., DigitalOcean Droplet, AWS EC2, bare metal).
 
-**Storage:** Local path provisioner or `hostPath`
+**Storage:** Local path provisioner or `hostPath.`
 
 **Configuration:**
 ```yaml
