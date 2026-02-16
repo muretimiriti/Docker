@@ -164,9 +164,9 @@ Open:
 To reach the EventListener webhook endpoint locally:
 
 ```bash
-kubectl -n default port-forward svc/el-event-listener 8080:8080
+kubectl -n default port-forward svc/el-event-listener 8090:8080
 ```
 
 Then use:
 
-- `http://localhost:8080`
+- `http://localhost:8090`
