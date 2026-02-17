@@ -168,7 +168,7 @@ spec:
     path: ${APP_PATH}
     kustomize:
       images:
-        - muretimiriti/test1=${RESOLVED_IMAGE}
+        - my-node-app=${RESOLVED_IMAGE}
   destination:
     server: https://kubernetes.default.svc
     namespace: ${DEST_NAMESPACE}

@@ -11,6 +11,6 @@ resources:
   - node-app/service.yaml
 
 images:
-  - name: my-node-app
-    newName: muretimiriti/test1
-    newTag: latest
+  - name: my-node-app             # ← Matches image name in deployment.yaml
+    newName: muretimiriti/test1   # ← Docker Hub repo
+    newTag: latest                # ← Overridden by ArgoCD at deploy time
