@@ -32,7 +32,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
-# ClusterRole for accessing ClusterTasks
+# ClusterRole for accessing ClusterTasks and Tekton Triggers
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -41,6 +41,9 @@ rules:
   - apiGroups: ["tekton.dev"]
     resources: ["clustertasks", "tasks"]
     verbs: ["get", "list"]
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["clustertriggerbindings", "eventlisteners", "triggers", "triggerbindings", "triggertemplates", "interceptors", "clusterinterceptors"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -49,7 +52,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: tekton-triggers-sa
-    namespace: default  # Change if using different namespace
+    namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

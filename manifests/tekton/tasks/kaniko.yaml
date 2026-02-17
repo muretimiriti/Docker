@@ -1,52 +1,96 @@
+
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: kaniko
 spec:
   description: |
-    Minimal Kaniko build/push task (vendored) to avoid relying on cluster-installed catalog tasks.
+    Minimal Kaniko build/push task (vendored) to avoid relying on
+    cluster-installed catalog tasks.
+
   params:
     - name: IMAGE
       type: string
       description: Destination image reference
+
     - name: CONTEXT
       type: string
-      default: .
+      default: "."
       description: Build context directory under the source workspace
+
     - name: DOCKERFILE
       type: string
-      default: Dockerfile
+      default: "Dockerfile"
       description: Dockerfile path under the source workspace
+
     - name: EXTRA_ARGS
       type: string
       default: ""
+      description: Extra arguments for kaniko executor
+
+  results:
+    - name: IMAGE_DIGEST
+      description: Digest of the built image
+    - name: IMAGE_URL
+      description: URL of the built image
+
   workspaces:
     - name: source
       description: Source workspace containing the Dockerfile
     - name: dockerconfig
       description: Workspace containing Docker config.json (for auth)
+      # ← NO mountPath here - we handle mounting manually
+
+  volumes:
+    - name: kaniko-docker
+      emptyDir: {}
+
   steps:
-    - name: build-and-push
-      image: gcr.io/kaniko-project/executor:v1.23.2
-      env:
-        - name: DOCKER_CONFIG
-          value: /kaniko/.docker
+    # Step 1: Copy docker credentials to kaniko config dir
+    - name: setup-credentials
+      image: alpine:latest
+      volumeMounts:
+        - name: kaniko-docker
+          mountPath: /kaniko/.docker
       script: |
         #!/usr/bin/env sh
         set -eu
 
+        echo "=========================================="
+        echo "🔐 Setting up Docker credentials..."
+        echo "=========================================="
+
         mkdir -p /kaniko/.docker
-        if [ -f /workspace/dockerconfig/config.json ]; then
-          cp /workspace/dockerconfig/config.json /kaniko/.docker/config.json
+
+        # Check for config.json in dockerconfig workspace
+        if [ -f "$(workspaces.dockerconfig.path)/config.json" ]; then
+          cp $(workspaces.dockerconfig.path)/config.json /kaniko/.docker/config.json
+          echo "✅ Docker credentials configured from config.json"
         else
-          echo "Missing /workspace/dockerconfig/config.json (docker credentials)" >&2
+          echo "❌ Missing config.json in dockerconfig workspace" >&2
+          echo "Available files in dockerconfig workspace:"
+          ls -la $(workspaces.dockerconfig.path)/ || echo "Workspace empty"
           exit 2
         fi
 
-        /kaniko/executor \
-          --context "dir:///workspace/source/$(params.CONTEXT)" \
-          --dockerfile "/workspace/source/$(params.DOCKERFILE)" \
-          --destination "$(params.IMAGE)" \
-          --snapshotMode=redo \
-          --verbosity=info \
-          $(params.EXTRA_ARGS)
+        echo "✅ Credentials setup complete"
+
+    # Step 2: Build and push using Kaniko executor directly
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      command:
+        - /kaniko/executor
+      args:
+        - --context=dir://$(workspaces.source.path)/$(params.CONTEXT)
+        - --dockerfile=$(workspaces.source.path)/$(params.DOCKERFILE)
+        - --destination=$(params.IMAGE)
+        - --digest-file=$(results.IMAGE_DIGEST.path)
+        - --snapshotMode=redo
+        - --verbosity=info
+        - --skip-tls-verify
+      env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+      volumeMounts:
+        - name: kaniko-docker
+          mountPath: /kaniko/.docker
