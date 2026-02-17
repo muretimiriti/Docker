@@ -13,7 +13,7 @@ spec:
         app: my-node-app
     spec:
       containers:
-        - name: app
+        - name: my-node-app
           image: my-node-app:local
           ports:
             - containerPort: 3000

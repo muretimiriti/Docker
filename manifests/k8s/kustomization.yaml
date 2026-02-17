@@ -12,5 +12,5 @@ resources:
 
 images:
   - name: my-node-app
-    newName: my-node-app
-    newTag: local
+    newName: muretimiriti/test1
+    newTag: latest
