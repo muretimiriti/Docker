@@ -13,8 +13,9 @@ spec:
         app: my-node-app
     spec:
       containers:
-        - name: my-node-app
-          image: my-node-app:local
+        - name: app
+          image: muretimiriti/test1:latest    # ← Fixed to match pipeline image
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
           env:

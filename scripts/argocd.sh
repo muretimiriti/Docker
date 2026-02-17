@@ -168,7 +168,7 @@ spec:
     path: ${APP_PATH}
     kustomize:
       images:
-        - muretimiriti/test1=muretimiriti/test1:${TAG}
+        - ${image_name}=${image_name}:${image_tag} 
   destination:
     server: https://kubernetes.default.svc
     namespace: ${DEST_NAMESPACE}
