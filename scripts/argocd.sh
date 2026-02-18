@@ -295,3 +295,5 @@ if [[ "$WAIT_ROLLOUT" == "true" ]]; then
 fi
 
 log "deployment flow completed"
+
+

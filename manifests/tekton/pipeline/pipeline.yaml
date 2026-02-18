@@ -294,3 +294,19 @@ spec:
           workspace: shared-data        # ← shared-data ONLY
         - name: dockerconfig
           workspace: docker-credentials # ← Secret, not PVC
+
+
+
+    # NEW: Update Git manifest with new image tag
+    - name: update-git-manifest
+      runAfter: [build-push]
+      taskRef:
+        name: git-update-deployment
+      params:
+        - name: IMAGE_TAG
+          value: $(tasks.build-push.results.IMAGE_TAG)
+        - name: IMAGE_NAME
+          value: $(params.image-name)
+      workspaces:
+        - name: source
+          workspace: shared-data
