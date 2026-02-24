@@ -306,7 +306,7 @@ spec:
         - name: IMAGE_TAG
           value: $(tasks.build-push.results.IMAGE_TAG)
         - name: IMAGE_NAME
-          value: $(params.image-name)
+          value: $(params.image-reference)
       workspaces:
         - name: source
           workspace: shared-data
