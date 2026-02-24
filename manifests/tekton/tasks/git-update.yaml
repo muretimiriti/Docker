@@ -1,0 +1,84 @@
+
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-update-deployment
+spec:
+  description: Update kustomization.yaml with new image tag and commit to Git
+  
+  params:
+    - name: IMAGE_TAG
+      description: New image tag to set
+    - name: IMAGE_NAME
+      description: Image name (e.g., muretimiriti/test1)
+      default: muretimiriti/test1
+    - name: GIT_USER_NAME
+      default: "Tekton Pipeline"
+    - name: GIT_USER_EMAIL
+      default: "tekton@pipeline.local"
+    - name: MANIFEST_FILE
+      default: "manifests/k8s/kustomization.yaml"
+  
+  workspaces:
+    - name: source
+      description: Git repository workspace
+
+  steps:
+    - name: update-and-push
+      image: alpine/git:latest
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: GIT_USER_NAME
+          value: $(params.GIT_USER_NAME)
+        - name: GIT_USER_EMAIL
+          value: $(params.GIT_USER_EMAIL)
+      script: |
+        #!/bin/sh
+        set -e
+        
+        IMAGE_TAG="$(params.IMAGE_TAG)"
+        IMAGE_NAME="$(params.IMAGE_NAME)"
+        MANIFEST_FILE="$(params.MANIFEST_FILE)"
+        
+        echo "=========================================="
+        echo "📝 Updating Git manifest"
+        echo "=========================================="
+        echo "Image: $IMAGE_NAME"
+        echo "New tag: $IMAGE_TAG"
+        echo "File: $MANIFEST_FILE"
+        
+        # Install yq for YAML manipulation
+        wget -qO /usr/local/bin/yq \
+          https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        chmod +x /usr/local/bin/yq
+        
+        # Update the newTag in kustomization.yaml
+        yq eval ".images[0].newTag = \"$IMAGE_TAG\"" -i "$MANIFEST_FILE"
+        
+        echo ""
+        echo "Updated kustomization.yaml:"
+        cat "$MANIFEST_FILE"
+        
+        # Configure git
+        git config user.name "$GIT_USER_NAME"
+        git config user.email "$GIT_USER_EMAIL"
+        
+        # Check if there are changes
+        if git diff --quiet "$MANIFEST_FILE"; then
+          echo "⚠️  No changes detected in manifest"
+          exit 0
+        fi
+        
+        # Commit changes
+        git add "$MANIFEST_FILE"
+        git commit -m "chore: update image to $IMAGE_TAG
+
+        Automated update by Tekton Pipeline
+        Image: $IMAGE_NAME:$IMAGE_TAG
+        [skip ci]"
+        
+        # Push to repository
+        echo "Pushing to Git repository..."
+        git push origin HEAD:main
+        
+        echo "✅ Manifest updated and pushed to Git"

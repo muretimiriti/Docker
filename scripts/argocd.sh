@@ -150,6 +150,10 @@ EOF
     sync_policy_block=""
   fi
 
+  local image_name image_tag
+  image_name="$(echo "$RESOLVED_IMAGE" | cut -d: -f1)"
+  image_tag="$(echo "$RESOLVED_IMAGE" | cut -d: -f2)"
+
   cat <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -164,7 +168,7 @@ spec:
     path: ${APP_PATH}
     kustomize:
       images:
-        - ${RESOLVED_IMAGE}
+        - ${image_name}=${image_name}:${image_tag} 
   destination:
     server: https://kubernetes.default.svc
     namespace: ${DEST_NAMESPACE}
@@ -291,3 +295,5 @@ if [[ "$WAIT_ROLLOUT" == "true" ]]; then
 fi
 
 log "deployment flow completed"
+
+

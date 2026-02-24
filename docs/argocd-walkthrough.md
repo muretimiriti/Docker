@@ -120,7 +120,7 @@ kubectl -n argocd describe application tech-stack
 Port-forward the ArgoCD API/UI service:
 
 ```bash
-kubectl -n argocd port-forward svc/argocd-server 8080:443
+kubectl -n argocd port-forward svc/argocd-server 9090:443
 ```
 
 Open:
