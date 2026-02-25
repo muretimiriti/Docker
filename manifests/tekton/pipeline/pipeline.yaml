@@ -327,7 +327,7 @@ spec:
         - name: GIT_USER_EMAIL
           value: "tekton-pipeline@example.com"
         - name: MANIFEST_PATH
-          value: k8s/deployment.yaml
+          value: k8s/kustomization.yaml
       workspaces:
         - name: source
           workspace: shared-data
