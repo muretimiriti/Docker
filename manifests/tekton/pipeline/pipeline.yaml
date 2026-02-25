@@ -274,17 +274,32 @@ spec:
           workspace: cache              # ← cache mounted here ONLY
 
     # ─────────────────────────────────────────
-    # STAGE 9: Build and push image
+    # STAGE 9: Tag Build and push image
     # Workspaces: shared-data + docker-credentials
     # ─────────────────────────────────────────
-    - name: build-push
+
+    - name: generate-tag
       runAfter:
         - save-cache
+      taskRef:
+        name: generate-image-tag
+      params:
+        - name: IMAGE_NAME
+          value: $(params.image-reference)
+      workspaces:
+        - name: source
+          workspace: shared-data        # ← shared-data ONLY
+       
+    - name: build-push
+      runAfter:
+        - generate-tag
       taskRef:
         name: kaniko
       params:
         - name: IMAGE
           value: $(params.image-reference)
+        - name: IMAGE_TAG
+          value: $(tasks.generate-tag.results.IMAGE_TAG)
         - name: CONTEXT
           value: .
         - name: DOCKERFILE
@@ -304,9 +319,15 @@ spec:
         name: git-update-deployment
       params:
         - name: IMAGE_TAG
-          value: $(tasks.build-push.results.IMAGE_TAG)
+          value: $(tasks.generate-tag.results.IMAGE_TAG)
         - name: IMAGE_NAME
           value: $(params.image-reference)
+        - name: GIT_USER_NAME
+          value: "Tekton Pipeline"
+        - name: GIT_USER_EMAIL
+          value: "tekton-pipeline@example.com"
+        - name: MANIFEST_PATH
+          value: k8s/deployment.yaml
       workspaces:
         - name: source
           workspace: shared-data

@@ -4,10 +4,12 @@ kind: Task
 metadata:
   name: kaniko
 spec:
-  description: Build and push with date-stamped tag
+  description: Build and push Docker image
   
   params:
     - name: IMAGE
+      type: string
+    - name: IMAGE_TAG
       type: string
     - name: CONTEXT
       default: "."
@@ -21,76 +23,42 @@ spec:
   results:
     - name: IMAGE_DIGEST
     - name: IMAGE_URL
-    - name: IMAGE_TAG
-
-  volumes:
-    - name: kaniko-docker
-      emptyDir: {}
-    - name: kaniko-bin
-      emptyDir: {}
 
   steps:
-    - name: setup-credentials
-      image: alpine:latest
-      volumeMounts:
-        - name: kaniko-docker
-          mountPath: /kaniko/.docker
-      script: |
-        #!/bin/sh
-        set -eu
-        mkdir -p /kaniko/.docker
-        cp $(workspaces.dockerconfig.path)/config.json /kaniko/.docker/config.json
-        echo "✅ Credentials configured"
-
-    - name: copy-kaniko
-      image: gcr.io/kaniko-project/executor:v1.23.2
-      volumeMounts:
-        - name: kaniko-bin
-          mountPath: /kaniko-bin
-      command: ["/busybox/sh", "-c"]
-      args:
-        - cp /kaniko/executor /kaniko-bin/executor && chmod +x /kaniko-bin/executor
-
     - name: build-and-push
-      image: alpine/git:latest
-      workingDir: $(workspaces.source.path)
-      volumeMounts:
-        - name: kaniko-docker
-          mountPath: /kaniko/.docker
-        - name: kaniko-bin
-          mountPath: /kaniko-bin
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      workingDir: /workspace
       env:
         - name: DOCKER_CONFIG
           value: /kaniko/.docker
-      script: |
-        #!/bin/sh
-        set -e
-        
-        # Generate tag
-        DATE_TAG=$(date -u +"%Y%m%d-%H%M%S")
-        GIT_SHA=$(git rev-parse --short=7 HEAD 2>/dev/null || echo "local")
-        IMAGE_TAG="${DATE_TAG}-${GIT_SHA}"
-        
-        echo "Tag: $IMAGE_TAG"
-        echo -n "$IMAGE_TAG" > $(results.IMAGE_TAG.path)
-        
-        IMAGE_BASE="$(params.IMAGE)"
-        FULL_IMAGE="${IMAGE_BASE}:${IMAGE_TAG}"
-        echo -n "$FULL_IMAGE" > $(results.IMAGE_URL.path)
-        
-        echo "=========================================="
-        echo "Building: $FULL_IMAGE"
-        echo "=========================================="
-        
-        # Call Kaniko
-        /kaniko-bin/executor \
-          --context=dir://$(workspaces.source.path)/$(params.CONTEXT) \
-          --dockerfile=$(workspaces.source.path)/$(params.DOCKERFILE) \
-          --destination=${FULL_IMAGE} \
-          --destination=${IMAGE_BASE}:latest \
-          --digest-file=$(results.IMAGE_DIGEST.path) \
-          --snapshotMode=redo \
-          --verbosity=info \
-          --skip-tls-verify
-        
-        echo "✅ Done!"
+      command:
+        - /kaniko/executor
+      args:
+        - --dockerfile=$(workspaces.source.path)/$(params.DOCKERFILE)
+        - --context=dir://$(workspaces.source.path)/$(params.CONTEXT)
+        - --destination=$(params.IMAGE):$(params.IMAGE_TAG)
+        - --destination=$(params.IMAGE):latest
+        - --digest-file=$(results.IMAGE_DIGEST.path)
+        - --snapshotMode=redo
+        - --verbosity=info
+        - --skip-tls-verify
+      volumeMounts:
+        - name: dockerconfig
+          mountPath: /kaniko/.docker
+      
+  sidecars:
+    - name: setup-docker-config
+      image: alpine:latest
+      command: ["/bin/sh"]
+      args:
+        - -c
+        - |
+          cp $(workspaces.dockerconfig.path)/config.json /kaniko/.docker/config.json
+          sleep infinity
+      volumeMounts:
+        - name: dockerconfig
+          mountPath: /kaniko/.docker
+  
+  volumes:
+    - name: dockerconfig
+      emptyDir: {}
