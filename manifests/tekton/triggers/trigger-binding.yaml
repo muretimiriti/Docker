@@ -1,3 +1,4 @@
+
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
@@ -6,10 +7,8 @@ spec:
   params:
     - name: repo-url
       value: $(body.repository.clone_url)
-
+    # Extract just the repo name, not the full image with tag
     - name: image-reference
-      value: muretimiriti/test1:$(body.after)
-
-    # Optional: set to "true" to enable SonarQube scan in the pipeline.
+      value: muretimiriti/test1  # ← Just base name, no tag!
     - name: run-sonarqube
       value: "false"
