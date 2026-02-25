@@ -9,25 +9,66 @@ spec:
   params:
     - name: IMAGE
       type: string
+      description: Base image name without tag
     - name: IMAGE_TAG
       type: string
+      description: Image tag to use
     - name: CONTEXT
+      type: string
       default: "."
     - name: DOCKERFILE
+      type: string
       default: "Dockerfile"
 
   workspaces:
     - name: source
+      description: Source code workspace
     - name: dockerconfig
+      description: Docker credentials workspace
 
   results:
     - name: IMAGE_DIGEST
+      description: Image digest
     - name: IMAGE_URL
+      description: Full image URL with tag
+
+  volumes:
+    - name: kaniko-docker
+      emptyDir: {}
 
   steps:
+    # Step 1: Setup Docker credentials
+    - name: setup-credentials
+      image: alpine:latest
+      volumeMounts:
+        - name: kaniko-docker
+          mountPath: /kaniko/.docker
+      script: |
+        #!/bin/sh
+        set -eu
+        
+        echo "=========================================="
+        echo "🔐 Setting up Docker credentials"
+        echo "=========================================="
+        
+        mkdir -p /kaniko/.docker
+        
+        if [ -f "$(workspaces.dockerconfig.path)/config.json" ]; then
+          cp $(workspaces.dockerconfig.path)/config.json /kaniko/.docker/config.json
+          echo "✅ Docker credentials configured"
+        else
+          echo "❌ Missing config.json in dockerconfig workspace" >&2
+          echo "Available files:"
+          ls -la $(workspaces.dockerconfig.path)/ || true
+          exit 2
+        fi
+
+    # Step 2: Build and push image
     - name: build-and-push
       image: gcr.io/kaniko-project/executor:v1.23.2
-      workingDir: /workspace
+      volumeMounts:
+        - name: kaniko-docker
+          mountPath: /kaniko/.docker
       env:
         - name: DOCKER_CONFIG
           value: /kaniko/.docker
@@ -39,26 +80,20 @@ spec:
         - --destination=$(params.IMAGE):$(params.IMAGE_TAG)
         - --destination=$(params.IMAGE):latest
         - --digest-file=$(results.IMAGE_DIGEST.path)
-        - --snapshotMode=redo
+        - --snapshot-mode=redo
         - --verbosity=info
         - --skip-tls-verify
-      volumeMounts:
-        - name: dockerconfig
-          mountPath: /kaniko/.docker
-      
-  sidecars:
-    - name: setup-docker-config
+
+    # Step 3: Save full image URL to result
+    - name: save-image-url
       image: alpine:latest
-      command: ["/bin/sh"]
-      args:
-        - -c
-        - |
-          cp $(workspaces.dockerconfig.path)/config.json /kaniko/.docker/config.json
-          sleep infinity
-      volumeMounts:
-        - name: dockerconfig
-          mountPath: /kaniko/.docker
-  
-  volumes:
-    - name: dockerconfig
-      emptyDir: {}
+      script: |
+        #!/bin/sh
+        set -e
+        
+        IMAGE_TAG="$(params.IMAGE_TAG)"
+        IMAGE_NAME="$(params.IMAGE)"
+        FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+        
+        echo "Full image: $FULL_IMAGE"
+        echo -n "$FULL_IMAGE" > $(results.IMAGE_URL.path)
