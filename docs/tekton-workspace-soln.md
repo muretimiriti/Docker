@@ -84,7 +84,7 @@ PVC Status Meanings:
 ──────────────────────────────────────────────────────
 Pending  → Storage being provisioned
 Bound    → Storage allocated and READY ✅ (not in use by a pod)
-Released → PVC deleted but underlying PV still exists
+Released → PVC deleted, but underlying PV still exists
 Failed   → Provisioning failed ❌
 ```
 
