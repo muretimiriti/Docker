@@ -6,10 +6,9 @@ spec:
   params:
     - name: repo-url
       value: $(body.repository.clone_url)
-
-    - name: image-reference
-      value: muretimiriti/test1:$(body.after)
-
-    # Optional: set to "true" to enable SonarQube scan in the pipeline.
+    
     - name: run-sonarqube
       value: "false"
+    
+    # DO NOT include image-reference here
+    # TriggerTemplate handles it with hardcoded value
