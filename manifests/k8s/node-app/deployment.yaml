@@ -15,7 +15,7 @@ spec:
       containers:
         - name: app
           image: host.docker.internal:5000/sample-node-app:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           env:

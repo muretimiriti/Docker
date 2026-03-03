@@ -70,6 +70,41 @@ require_command() {
   fi
 }
 
+is_local_registry_image() {
+  local image_ref="$1"
+  [[ "$image_ref" =~ ^(host\.docker\.internal|localhost):[0-9]+/ ]]
+}
+
+ensure_local_image_in_kind_nodes() {
+  local image_ref="$1"
+  local alt_ref node node_list
+
+  is_local_registry_image "$image_ref" || return 0
+  require_command docker
+
+  if ! docker image inspect "$image_ref" >/dev/null 2>&1; then
+    if [[ "$image_ref" =~ ^host\.docker\.internal:5000/(.+)$ ]]; then
+      alt_ref="localhost:5000/${BASH_REMATCH[1]}"
+      log "pulling image via localhost mirror: $alt_ref"
+      docker pull "$alt_ref" >/dev/null
+      docker tag "$alt_ref" "$image_ref"
+    else
+      log "pulling image: $image_ref"
+      docker pull "$image_ref" >/dev/null
+    fi
+  fi
+
+  node_list="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+  while IFS= read -r node; do
+    [[ -n "$node" ]] || continue
+    if ! docker ps --format '{{.Names}}' | grep -Fxq "$node"; then
+      continue
+    fi
+    log "loading image into node: $node"
+    docker save "$image_ref" | docker exec -i "$node" ctr -n k8s.io images import - >/dev/null
+  done <<<"$node_list"
+}
+
 duration_to_seconds() {
   local value="$1"
   if [[ "$value" =~ ^([0-9]+)s$ ]]; then
@@ -337,6 +372,8 @@ log "repoURL=$REPO_URL"
 log "targetRevision=$TARGET_REVISION"
 log "path=$APP_PATH"
 log "selected image=$RESOLVED_IMAGE"
+
+ensure_local_image_in_kind_nodes "$RESOLVED_IMAGE"
 
 ensure_namespace "$DEST_NAMESPACE"
 install_argocd_if_requested
