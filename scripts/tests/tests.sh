@@ -18,9 +18,12 @@ echo "[tests] running test suite..."
 echo "[tests] command: npm test"
 npm test
 
+echo "[tests] running integration suite..."
+echo "[tests] command: npm run test:integration"
+npm run test:integration
+
 echo "[tests] running perf check..."
 echo "[tests] command: npm run perf"
 npm run perf
 
 echo "[tests] done."
-

@@ -9,7 +9,7 @@ APP_NAME="${ARGOCD_APP_NAME:-tech-stack}"
 PROJECT_NAME="${ARGOCD_PROJECT:-default}"
 DEST_NAMESPACE="${ARGOCD_DEST_NAMESPACE:-default}"
 TARGET_REVISION="${ARGOCD_TARGET_REVISION:-HEAD}"
-APP_PATH="${ARGOCD_APP_PATH:-manifests/k8s}"
+APP_PATH="${ARGOCD_APP_PATH:-manifests/gitops/overlays/dev}"
 TEKTON_NAMESPACE="${TEKTON_NAMESPACE:-default}"
 DEPLOYMENT_NAME="${ARGOCD_DEPLOYMENT_NAME:-sample-node-app}"
 IMAGE_REFERENCE="${IMAGE_REFERENCE:-}"
@@ -17,6 +17,12 @@ INSTALL_ARGOCD="false"
 WAIT_ROLLOUT="true"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-180s}"
 GITOPS_SYNC="true"
+NOTIFY_WEBHOOK_URL="${ARGO_NOTIFY_WEBHOOK_URL:-}"
+ENVIRONMENT="${ARGOCD_ENVIRONMENT:-}"
+SMOKE_TEST_ENABLED="true"
+SMOKE_PATH="${SMOKE_PATH:-/healthz}"
+SMOKE_TIMEOUT="${SMOKE_TIMEOUT:-120s}"
+AUTO_ROLLBACK_ON_FAILURE="true"
 
 usage() {
   cat <<'USAGE'
@@ -34,7 +40,8 @@ Options:
   --image <ref>             Full image reference (example: ghcr.io/org/app:sha123)
   --repo-url <url>          Git repository URL for ArgoCD source (default: git remote origin)
   --revision <rev>          Git revision/branch/tag to deploy (default: HEAD)
-  --path <path>             Repo path for manifests (default: manifests/k8s)
+  --path <path>             Repo path for manifests (default: manifests/gitops/overlays/dev)
+  --env <dev|staging|prod>  Use environment config from manifests/environments/<env>.env
   --app-name <name>         ArgoCD Application name (default: tech-stack)
   --project <name>          ArgoCD project name (default: default)
   --argocd-namespace <ns>   Namespace where ArgoCD runs (default: argocd)
@@ -45,12 +52,18 @@ Options:
   --no-sync                 Disable ArgoCD automated sync policy
   --no-wait                 Do not wait for deployment rollout
   --wait-timeout <dur>      Rollout wait timeout (default: 180s)
+  --notify-webhook-url <u>  Optional webhook URL for deploy success/failure notifications
+  --smoke-path <path>       HTTP path for post-deploy smoke test (default: /healthz)
+  --skip-smoke              Skip post-deploy smoke test
+  --no-auto-rollback        Disable rollback when rollout/smoke test fails
   -h, --help                Show this help
 
 Environment:
   IMAGE_REFERENCE           Same as --image
   ARGOCD_*                  Defaults for key options (see script variables)
   TEKTON_NAMESPACE          Default namespace for Tekton PipelineRun discovery
+  ARGO_NOTIFY_WEBHOOK_URL   Same as --notify-webhook-url
+  ARGOCD_ENVIRONMENT        Same as --env
 USAGE
 }
 
@@ -68,6 +81,23 @@ require_command() {
   if ! command -v "$cmd" >/dev/null 2>&1; then
     die "$cmd not found on PATH"
   fi
+}
+
+notify() {
+  local status="$1"
+  local message="$2"
+  [[ -n "$NOTIFY_WEBHOOK_URL" ]] || return 0
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS -X POST "$NOTIFY_WEBHOOK_URL" \
+      -H "Content-Type: application/json" \
+      -d "{\"component\":\"argocd\",\"app\":\"$APP_NAME\",\"status\":\"$status\",\"message\":\"$message\"}" >/dev/null || true
+  fi
+}
+
+argocd_failure_message() {
+  kubectl -n "$ARGOCD_NAMESPACE" get application "$APP_NAME" \
+    -o jsonpath='{.status.operationState.message}' 2>/dev/null || true
 }
 
 is_local_registry_image() {
@@ -133,11 +163,44 @@ wait_for_deployment_exists() {
 
   while ! kubectl -n "$namespace" get deployment "$deployment_name" >/dev/null 2>&1; do
     if (( elapsed >= timeout_seconds )); then
-      die "deployment/$deployment_name not found in namespace $namespace within $timeout"
+      return 1
     fi
     sleep 3
     elapsed=$((elapsed + 3))
   done
+}
+
+run_smoke_test() {
+  local namespace="$1"
+  local deployment_name="$2"
+  local path="$3"
+  local timeout="$4"
+  local timeout_seconds
+  local job_name
+
+  timeout_seconds="$(duration_to_seconds "$timeout")"
+  job_name="smoke-${deployment_name}-$(date +%s)"
+
+  kubectl -n "$namespace" create job "$job_name" --image=curlimages/curl:8.10.1 \
+    -- sh -c "curl -fsS \"http://${deployment_name}:3000${path}\" >/dev/null" >/dev/null
+
+  if ! kubectl -n "$namespace" wait --for=condition=complete "job/$job_name" --timeout="${timeout_seconds}s" >/dev/null 2>&1; then
+    kubectl -n "$namespace" logs "job/$job_name" >/dev/null 2>&1 || true
+    kubectl -n "$namespace" delete job "$job_name" --ignore-not-found >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  kubectl -n "$namespace" delete job "$job_name" --ignore-not-found >/dev/null 2>&1 || true
+  return 0
+}
+
+rollback_deployment() {
+  local namespace="$1"
+  local deployment_name="$2"
+  if [[ "$AUTO_ROLLBACK_ON_FAILURE" == "true" ]]; then
+    log "rolling back deployment/$deployment_name"
+    kubectl -n "$namespace" rollout undo "deployment/$deployment_name" >/dev/null 2>&1 || true
+  fi
 }
 
 resolve_argocd_managed_deployments() {
@@ -147,8 +210,12 @@ resolve_argocd_managed_deployments() {
 }
 
 extract_manifest_image() {
-  local image_line
-  image_line="$(awk '/image:/{print $2; exit}' "$ROOT_DIR/manifests/k8s/node-app/deployment.yaml" 2>/dev/null || true)"
+  local deployment_file image_line
+  deployment_file="$ROOT_DIR/manifests/apps/sample-node-app/deployment.yaml"
+  if [[ ! -f "$deployment_file" ]]; then
+    deployment_file="$ROOT_DIR/manifests/k8s/node-app/deployment.yaml"
+  fi
+  image_line="$(awk '/image:/{print $2; exit}' "$deployment_file" 2>/dev/null || true)"
   printf '%s\n' "${image_line:-}"
 }
 
@@ -290,6 +357,11 @@ while [[ $# -gt 0 ]]; do
       APP_PATH="$2"
       shift 2
       ;;
+    --env)
+      [[ $# -ge 2 ]] || die "Missing value for --env"
+      ENVIRONMENT="$2"
+      shift 2
+      ;;
     --app-name)
       [[ $# -ge 2 ]] || die "Missing value for --app-name"
       APP_NAME="$2"
@@ -337,6 +409,24 @@ while [[ $# -gt 0 ]]; do
       WAIT_TIMEOUT="$2"
       shift 2
       ;;
+    --notify-webhook-url)
+      [[ $# -ge 2 ]] || die "Missing value for --notify-webhook-url"
+      NOTIFY_WEBHOOK_URL="$2"
+      shift 2
+      ;;
+    --smoke-path)
+      [[ $# -ge 2 ]] || die "Missing value for --smoke-path"
+      SMOKE_PATH="$2"
+      shift 2
+      ;;
+    --skip-smoke)
+      SMOKE_TEST_ENABLED="false"
+      shift
+      ;;
+    --no-auto-rollback)
+      AUTO_ROLLBACK_ON_FAILURE="false"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -346,6 +436,26 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "$ENVIRONMENT" ]]; then
+  case "$ENVIRONMENT" in
+    dev|staging|prod) ;;
+    *) die "Unsupported environment '$ENVIRONMENT' (use dev|staging|prod)" ;;
+  esac
+
+  APP_PATH="manifests/gitops/overlays/${ENVIRONMENT}"
+  env_file="$ROOT_DIR/manifests/environments/${ENVIRONMENT}.env"
+  [[ -f "$env_file" ]] || die "Environment config not found: $env_file"
+
+  # shellcheck disable=SC1090
+  source "$env_file"
+
+  [[ "${DEST_NAMESPACE}" == "${ARGOCD_DEST_NAMESPACE:-default}" ]] && DEST_NAMESPACE="${DEPLOY_NAMESPACE:-$DEST_NAMESPACE}"
+  [[ "$TARGET_REVISION" == "${ARGOCD_TARGET_REVISION:-HEAD}" ]] && TARGET_REVISION="${TARGET_GIT_REVISION:-$TARGET_REVISION}"
+  if [[ -z "$IMAGE_REFERENCE" && -n "${IMAGE_BASE:-}" && -n "${IMAGE_TAG:-}" ]]; then
+    IMAGE_REFERENCE="${IMAGE_BASE}:${IMAGE_TAG}"
+  fi
+fi
 
 require_command kubectl
 
@@ -384,6 +494,7 @@ log "applying ArgoCD Application $APP_NAME"
 build_application_manifest | kubectl apply -f -
 
 if [[ "$WAIT_ROLLOUT" == "true" ]]; then
+  failure_message=""
   managed_deployments="$(resolve_argocd_managed_deployments || true)"
   if [[ -n "$managed_deployments" ]] && ! echo "$managed_deployments" | grep -Fxq "$DEPLOYMENT_NAME"; then
     if echo "$managed_deployments" | grep -Fxq "my-node-app"; then
@@ -393,10 +504,29 @@ if [[ "$WAIT_ROLLOUT" == "true" ]]; then
   fi
 
   log "waiting for deployment to be created: deployment/$DEPLOYMENT_NAME (namespace=$DEST_NAMESPACE)"
-  wait_for_deployment_exists "$DEST_NAMESPACE" "$DEPLOYMENT_NAME" "$WAIT_TIMEOUT"
+  if ! wait_for_deployment_exists "$DEST_NAMESPACE" "$DEPLOYMENT_NAME" "$WAIT_TIMEOUT"; then
+    failure_message="$(argocd_failure_message)"
+    notify "failed" "${failure_message:-deployment was not created in time}"
+    die "${failure_message:-deployment/$DEPLOYMENT_NAME not created in time}"
+  fi
   log "waiting for rollout: deployment/$DEPLOYMENT_NAME (namespace=$DEST_NAMESPACE)"
-  kubectl -n "$DEST_NAMESPACE" rollout status "deployment/$DEPLOYMENT_NAME" --timeout="$WAIT_TIMEOUT"
+  if ! kubectl -n "$DEST_NAMESPACE" rollout status "deployment/$DEPLOYMENT_NAME" --timeout="$WAIT_TIMEOUT"; then
+    failure_message="$(argocd_failure_message)"
+    rollback_deployment "$DEST_NAMESPACE" "$DEPLOYMENT_NAME"
+    notify "failed" "${failure_message:-rollout failed}"
+    die "${failure_message:-rollout failed for deployment/$DEPLOYMENT_NAME}"
+  fi
+
+  if [[ "$SMOKE_TEST_ENABLED" == "true" ]]; then
+    log "running smoke test: http://${DEPLOYMENT_NAME}:3000${SMOKE_PATH}"
+    if ! run_smoke_test "$DEST_NAMESPACE" "$DEPLOYMENT_NAME" "$SMOKE_PATH" "$SMOKE_TIMEOUT"; then
+      rollback_deployment "$DEST_NAMESPACE" "$DEPLOYMENT_NAME"
+      notify "failed" "smoke test failed for deployment/$DEPLOYMENT_NAME"
+      die "smoke test failed for deployment/$DEPLOYMENT_NAME (path=$SMOKE_PATH)"
+    fi
+  fi
 fi
 
 log "deployment flow completed"
+notify "succeeded" "deployment flow completed for $APP_NAME"
 log "help: ./scripts/k8s/start-argo.sh --help"

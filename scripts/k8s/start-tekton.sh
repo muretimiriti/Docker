@@ -33,6 +33,7 @@ Environment:
   TEKTON_REPO_URL        Git repo URL for pipeline param repo-url (default: git remote origin)
   TEKTON_IMAGE_REFERENCE Base image name for pipeline param image-reference (default: derived from node app deployment image)
   RUN_SONARQUBE          true/false to set pipeline param run-sonarqube (default: false)
+  NOTIFICATION_WEBHOOK_URL Optional webhook URL passed to PipelineRun notifications
   DOCKER_CONFIG_JSON     Path to docker config.json (default: $DOCKER_CONFIG/config.json or $HOME/.docker/config.json)
   SONAR_HOST_URL         If set with SONAR_TOKEN, creates sonarqube-credentials secret
   SONAR_TOKEN            If set with SONAR_HOST_URL, creates sonarqube-credentials secret
@@ -48,6 +49,21 @@ log() {
 die() {
   echo "[tekton] $*" >&2
   exit 1
+}
+
+retry_cmd() {
+  local attempts="$1"
+  local sleep_seconds="$2"
+  shift 2
+
+  local n=1
+  until "$@"; do
+    if (( n >= attempts )); then
+      return 1
+    fi
+    n=$((n + 1))
+    sleep "$sleep_seconds"
+  done
 }
 
 while [[ $# -gt 0 ]]; do
@@ -102,7 +118,7 @@ k() {
 apply_manifest() {
   local file_path="$1"
   log "applying ${file_path#"$ROOT_DIR"/}"
-  k apply -f "$file_path"
+  retry_cmd 3 2 k apply -f "$file_path"
 }
 
 wait_for_tekton_crds() {
@@ -150,17 +166,17 @@ configure_tekton_feature_flags() {
 
 install_tekton_components() {
   log "installing Tekton Pipelines (latest)"
-  kubectl apply -f "https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml"
+  retry_cmd 3 4 kubectl apply -f "https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml"
 
   log "installing Tekton Triggers (latest)"
-  kubectl apply -f "https://storage.googleapis.com/tekton-releases/triggers/latest/release.yaml"
+  retry_cmd 3 4 kubectl apply -f "https://storage.googleapis.com/tekton-releases/triggers/latest/release.yaml"
 
   log "installing Tekton Triggers interceptors (latest)"
-  kubectl apply -f "https://storage.googleapis.com/tekton-releases/triggers/latest/interceptors.yaml"
+  retry_cmd 3 4 kubectl apply -f "https://storage.googleapis.com/tekton-releases/triggers/latest/interceptors.yaml"
 
   if [[ "$INSTALL_DASHBOARD" == "true" ]]; then
     log "installing Tekton Dashboard UI (latest)"
-    kubectl apply -f "https://storage.googleapis.com/tekton-releases/dashboard/latest/release-full.yaml"
+    retry_cmd 3 4 kubectl apply -f "https://storage.googleapis.com/tekton-releases/dashboard/latest/release-full.yaml"
   else
     log "skipping Tekton Dashboard UI install"
   fi
@@ -256,7 +272,10 @@ infer_repo_url() {
 
 extract_node_image_reference_base() {
   local deployment_file image_no_digest image_ref
-  deployment_file="$ROOT_DIR/manifests/k8s/node-app/deployment.yaml"
+  deployment_file="$ROOT_DIR/manifests/apps/sample-node-app/deployment.yaml"
+  if [[ ! -f "$deployment_file" ]]; then
+    deployment_file="$ROOT_DIR/manifests/k8s/node-app/deployment.yaml"
+  fi
 
   image_ref="$(awk '/image:/{print $2; exit}' "$deployment_file" 2>/dev/null || true)"
   [[ -n "$image_ref" ]] || return 0
@@ -271,11 +290,12 @@ extract_node_image_reference_base() {
 }
 
 create_pipeline_run_for_node_app() {
-  local repo_url image_reference run_sonarqube created_run_name
+  local repo_url image_reference run_sonarqube notification_webhook_url created_run_name
 
   repo_url="${TEKTON_REPO_URL:-$(infer_repo_url)}"
   image_reference="${TEKTON_IMAGE_REFERENCE:-$(extract_node_image_reference_base)}"
   run_sonarqube="${RUN_SONARQUBE:-false}"
+  notification_webhook_url="${NOTIFICATION_WEBHOOK_URL:-}"
 
   [[ -n "$repo_url" ]] || die "Unable to resolve repo URL; set TEKTON_REPO_URL"
   [[ -n "$image_reference" ]] || die "Unable to resolve image reference base; set TEKTON_IMAGE_REFERENCE"
@@ -299,6 +319,10 @@ metadata:
     app.kubernetes.io/name: sample-node-app
 spec:
   serviceAccountName: tekton-triggers-sa
+  timeouts:
+    pipeline: 45m0s
+    tasks: 40m0s
+    finally: 5m0s
   pipelineRef:
     name: tekton-trigger-listeners
   podTemplate:
@@ -326,6 +350,8 @@ spec:
       value: $image_reference
     - name: run-sonarqube
       value: "$run_sonarqube"
+    - name: notification-webhook-url
+      value: "$notification_webhook_url"
 EOF
 
   created_run_name="$(k get pipelineruns --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | tail -n 1)"
@@ -352,15 +378,15 @@ apply_manifest "$ROOT_DIR/manifests/tekton/rbac/rbac.yaml"
 apply_manifest "$ROOT_DIR/manifests/tekton/pvc/cache-pvc.yaml"
 
 log "applying Tekton tasks"
-k apply -f "$ROOT_DIR/manifests/tekton/tasks/"
+retry_cmd 3 2 k apply -f "$ROOT_DIR/manifests/tekton/tasks/"
 
 apply_manifest "$ROOT_DIR/manifests/tekton/pipeline/pipeline.yaml"
 
 if [[ "$APPLY_TRIGGERS" == "true" ]]; then
   log "applying Tekton triggers"
-  k apply -f "$ROOT_DIR/manifests/tekton/triggers/trigger-binding.yaml"
-  k apply -f "$ROOT_DIR/manifests/tekton/triggers/trigger-template.yaml"
-  k apply -f "$ROOT_DIR/manifests/tekton/triggers/event-listener.yaml"
+  retry_cmd 3 2 k apply -f "$ROOT_DIR/manifests/tekton/triggers/trigger-binding.yaml"
+  retry_cmd 3 2 k apply -f "$ROOT_DIR/manifests/tekton/triggers/trigger-template.yaml"
+  retry_cmd 3 2 k apply -f "$ROOT_DIR/manifests/tekton/triggers/event-listener.yaml"
 else
   log "skipping trigger manifests"
 fi
