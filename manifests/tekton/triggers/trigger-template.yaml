@@ -8,6 +8,8 @@ spec:
     - name: repo-url
     - name: run-sonarqube
       default: "false"
+    - name: notification-webhook-url
+      default: ""
   
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
@@ -16,6 +18,10 @@ spec:
         generateName: tekton-trigger-listeners-run-
       spec:
         serviceAccountName: tekton-triggers-sa
+        timeouts:
+          pipeline: 45m0s
+          tasks: 40m0s
+          finally: 5m0s
         pipelineRef:
           name: tekton-trigger-listeners
         params:
@@ -25,6 +31,8 @@ spec:
             value: host.docker.internal:5000/sample-node-app
           - name: run-sonarqube
             value: $(tt.params.run-sonarqube)
+          - name: notification-webhook-url
+            value: $(tt.params.notification-webhook-url)
         workspaces:
           - name: shared-data
             volumeClaimTemplate:

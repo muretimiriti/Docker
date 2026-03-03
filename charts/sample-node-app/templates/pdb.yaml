@@ -1,0 +1,12 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "sample-node-app.fullname" . }}
+  namespace: {{ default .Release.Namespace .Values.namespaceOverride }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ include "sample-node-app.name" . }}
+{{- end }}

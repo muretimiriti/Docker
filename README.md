@@ -25,20 +25,26 @@ CI/CD:
 
 - Tekton Pipelines + Tekton Triggers (manifests in `manifests/tekton/`)
 - Trivy SCA scan task (in-repo)
+- Mongo integration-test gate before image build/push
 - SonarQube scan task (in-repo, optional via pipeline param)
-- ArgoCD deployment helper (`scripts/k8s/start-argo.sh`) with image auto-selection
+- ArgoCD deployment helper (`scripts/k8s/start-argo.sh`) with image auto-selection, smoke test, and optional auto-rollback
 - Observability stack (`manifests/observability/`): OTel, Prometheus+Thanos, Loki, Tempo, Grafana
 
 ## Repo Layout
 
 - `app.js`: Express app factory (routes, HTML escaping, validation)
 - `server.js`: runtime entrypoint (Mongo connection + listen)
+- `logger.js`: JSON structured logging with OTel trace IDs
 - `models/`: Mongoose schemas
 - `views/`: HTML templates (`register.html`, `profile.html`)
 - `public/`: static assets (CSS)
 - `tests/`: Node-native tests (`node --test ...`)
 - `perf/`: lightweight perf check (`npm run perf`)
 - `manifests/`: Kubernetes and Tekton YAML (see `manifests/README.md`)
+- `manifests/environments/`: promotion config for `dev`, `staging`, `prod`
+- `manifests/apps/`: app workloads (`sample-node-app`)
+- `manifests/platform/`: platform workloads (`mongo`, `mongo-express`)
+- `manifests/gitops/`: base + env overlays for ArgoCD
 - `scripts/`: helper scripts to run and stop the stack
 
 ## Prerequisites
@@ -99,6 +105,12 @@ Run unit/integration-style handler tests (no Mongo required):
 
 ```bash
 npm test
+```
+
+Run Mongo integration tests:
+
+```bash
+npm run test:integration
 ```
 
 Run the lightweight perf micro-benchmark:
@@ -180,6 +192,8 @@ Use the setup script to install Tekton (pipelines/triggers/dashboard), create re
 Required for registry push:
 
 - A valid Docker login config at `$HOME/.docker/config.json` (or set `DOCKER_CONFIG_JSON` to another path).
+- Default local registry flow uses `host.docker.internal:5000/sample-node-app`.
+- Use `./scripts/k8s/registry-preload.sh --image host.docker.internal:5000/sample-node-app:<tag>` for Docker Desktop/kind preload.
 
 Optional inputs:
 
@@ -221,13 +235,21 @@ Use the ArgoCD script to select an image and deploy using a GitOps `Application`
 ./scripts/k8s/start-argo.sh --repo-url <your-repo-url>
 ```
 
+Environment deploy (promotion-aware):
+
+```bash
+./scripts/k8s/start-argo.sh --env dev
+./scripts/k8s/start-argo.sh --env staging
+./scripts/k8s/start-argo.sh --env prod
+```
+
 Image selection priority:
 
 - `--image <ref>`
 - `IMAGE_REFERENCE` env var
 - latest successful Tekton `build-push` TaskRun result `IMAGE_URL` (tagged image)
 - fallback to latest successful Tekton `PipelineRun` param `image-reference`
-- fallback to `manifests/k8s/node-app/deployment.yaml` image
+- fallback to `manifests/apps/sample-node-app/deployment.yaml` image
 
 Useful flags:
 
@@ -235,8 +257,35 @@ Useful flags:
 - `--dest-namespace <name>`: target namespace for workloads
 - `--revision <branch|tag|sha>`: Git revision for ArgoCD source
 - `--no-wait`: skip rollout wait
+- `--notify-webhook-url <url>`: send deploy success/failure notifications
+- `--env <dev|staging|prod>`: deploy from `manifests/gitops/overlays/<env>` and load defaults from `manifests/environments/<env>.env`
+- `--smoke-path <path>`: post-deploy smoke check path (default `/healthz`)
+- `--skip-smoke`: disable post-deploy smoke check
+- `--no-auto-rollback`: disable rollback when rollout/smoke fails
+- `--rollback-mode gitops`: disables `rollout undo` and expects GitOps rollback flow
+- `--skip-path-preflight`: bypass remote revision/path check (not recommended)
 
-Default ArgoCD app path is `manifests/k8s`, which now includes a `kustomization.yaml` so image overrides are applied cleanly.
+Default ArgoCD app path is `manifests/gitops/overlays/dev`.
+
+Promotion command:
+
+```bash
+./scripts/k8s/promote.sh --from dev --to staging
+./scripts/k8s/promote.sh --from staging --to prod
+```
+
+Guarded promotion (checks + approval + pushed branch verification):
+
+```bash
+./scripts/k8s/promote.sh --from dev --to staging --verify-push --approved
+./scripts/k8s/promote.sh --from staging --to prod --verify-push --approved
+```
+
+GitOps-native rollback:
+
+```bash
+./scripts/k8s/gitops-rollback.sh --env dev --push
+```
 
 ArgoCD Web UI access:
 
@@ -278,12 +327,32 @@ Default Grafana credentials:
 
 - Do not commit real credentials. `.env` is ignored by git.
 - The Tekton secret manifests under `manifests/tekton/secrets/` contain placeholders and are not safe to commit with real values.
+- Security manifests are under `manifests/security/`.
+- Install and enforce ESO + Kyverno + cosign verification with:
+
+```bash
+./scripts/k8s/start-security.sh \
+  --vault-addr https://vault.example.com \
+  --vault-token-namespace external-secrets \
+  --vault-token-secret vault-token \
+  --cosign-public-key-file ./cosign.pub
+```
+
+- Use `--audit-policy` if you want policy in audit mode; default is enforce mode.
 
 ## Scripts
 
 - `./scripts/docker/docker-start.sh`: brings up Docker Compose (`up --build`)
 - `./scripts/docker/docker-stop.sh`: brings down Docker Compose (`down`)
-- `./scripts/tests/tests.sh`: runs `npm test` and `npm run perf`
+- `./scripts/tests/tests.sh`: runs `npm test`, `npm run test:integration`, and `npm run perf`
 - `./scripts/k8s/start-tekton.sh`: automates Tekton install + manifests + secret setup
 - `./scripts/k8s/start-argo.sh`: picks image, creates/updates ArgoCD `Application`, and deploys to cluster
+- `./scripts/k8s/promote.sh`: promotes image tags between `dev -> staging -> prod` environment configs
+- `./scripts/k8s/gitops-rollback.sh`: GitOps-native rollback (revert + optional push + Argo refresh)
+- `./scripts/k8s/cicd-status.sh`: prints Tekton + ArgoCD health summary and can notify a webhook
+- `./scripts/k8s/sign-image.sh`: signs container images with Cosign
+- `./scripts/k8s/start-security.sh`: installs External Secrets + Kyverno and applies enforceable security manifests
+- `./scripts/k8s/registry-preload.sh`: preloads local images into Docker Desktop/kind nodes
+- `./scripts/k8s/registry-retention.sh`: prunes old local registry tags while keeping newest N
 - `./scripts/k8s/start-observability.sh`: deploys OTel, Prometheus+Thanos, Loki, Tempo, and Grafana
+- `./scripts/k8s/start-helm-app.sh`: deploys sample-node-app with Helm values (`dev|staging|prod`)

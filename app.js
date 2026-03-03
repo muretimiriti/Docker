@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const logger = require('./logger');
 
 function nowMs() {
   return Date.now();
@@ -129,6 +130,7 @@ function createApp({ UserModel, viewsDir } = {}) {
   // Middleware
   app.use(express.urlencoded({ extended: true }));
   app.use(express.static(path.join(__dirname, 'public')));
+  app.use(logger.requestLogger(process.env.OTEL_SERVICE_NAME || 'sample-node-app'));
 
   // Basic in-memory rate limiting (demo-safe defaults).
   const keyFn = (req) =>
@@ -185,8 +187,7 @@ function createApp({ UserModel, viewsDir } = {}) {
         if (err && err.code === 11000) {
           return res.status(409).send('Email already exists');
         }
-        // eslint-disable-next-line no-console
-        console.error('Error saving user:', err);
+        logger.error('user_save_failed', { error: err && err.message ? err.message : String(err) });
         return res.status(500).send('Error saving user');
       }
     });
@@ -207,8 +208,7 @@ function createApp({ UserModel, viewsDir } = {}) {
       if (!user) return res.status(404).send('User not found');
       return res.send(renderProfile(profileTemplate, user));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Error loading profile:', err);
+      logger.error('profile_load_failed', { error: err && err.message ? err.message : String(err), user_id: userId });
       return res.status(500).send('Server error');
     }
   });
@@ -245,8 +245,7 @@ function createApp({ UserModel, viewsDir } = {}) {
           if (err && err.code === 11000) {
             return res.status(409).send('Email already exists');
           }
-          // eslint-disable-next-line no-console
-          console.error('Error updating user:', err);
+          logger.error('user_update_failed', { error: err && err.message ? err.message : String(err), user_id: id });
           return res.status(500).send('Error updating user');
         }
       });

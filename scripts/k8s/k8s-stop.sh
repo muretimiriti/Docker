@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 STOP_TEKTON="true"
 STOP_ARGOCD="true"
+FORCE_CLEANUP="false"
 
 TEKTON_NAMESPACE="${TEKTON_NAMESPACE:-default}"
 ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
@@ -26,6 +27,7 @@ Deletes Tekton and ArgoCD resources from the cluster.
 Options:
   --skip-tekton        Do not clean up Tekton resources
   --skip-argocd        Do not clean up ArgoCD resources
+  --force              Force cleanup of stuck Tekton PVC finalizers
   -h, --help           Show this help message
 
 Environment:
@@ -59,6 +61,10 @@ while [[ $# -gt 0 ]]; do
       STOP_ARGOCD="false"
       shift
       ;;
+    --force)
+      FORCE_CLEANUP="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -85,9 +91,9 @@ delete_manifest_if_present() {
   local manifest="$1"
   local ns="${2:-}"
   if [[ -n "$ns" ]]; then
-    kubectl -n "$ns" delete -f "$manifest" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl -n "$ns" delete -f "$manifest" --ignore-not-found --wait=false --timeout=20s --request-timeout=20s >/dev/null 2>&1 || true
   else
-    kubectl delete -f "$manifest" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete -f "$manifest" --ignore-not-found --wait=false --timeout=20s --request-timeout=20s >/dev/null 2>&1 || true
   fi
 }
 
@@ -95,14 +101,20 @@ delete_url_manifest() {
   local url="$1"
   local ns="${2:-}"
   if [[ -n "$ns" ]]; then
-    kubectl -n "$ns" delete -f "$url" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl -n "$ns" delete -f "$url" --ignore-not-found --wait=false --timeout=20s --request-timeout=20s >/dev/null 2>&1 || true
   else
-    kubectl delete -f "$url" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete -f "$url" --ignore-not-found --wait=false --timeout=20s --request-timeout=20s >/dev/null 2>&1 || true
   fi
 }
 
 cleanup_tekton() {
   log "cleaning Tekton app resources from namespace $TEKTON_NAMESPACE"
+
+  log "deleting Tekton runs and pods first (to release PVC protection)"
+  kubectl -n "$TEKTON_NAMESPACE" delete pipelinerun --all --ignore-not-found --wait=false --timeout=20s >/dev/null 2>&1 || true
+  kubectl -n "$TEKTON_NAMESPACE" delete taskrun --all --ignore-not-found --wait=false --timeout=20s >/dev/null 2>&1 || true
+  kubectl -n "$TEKTON_NAMESPACE" delete pod -l tekton.dev/pipelineRun --ignore-not-found --wait=false --timeout=20s >/dev/null 2>&1 || true
+  kubectl -n "$TEKTON_NAMESPACE" delete pod -l tekton.dev/taskRun --ignore-not-found --wait=false --timeout=20s >/dev/null 2>&1 || true
 
   delete_manifest_if_present "$ROOT_DIR/manifests/tekton/triggers/event-listener.yaml" "$TEKTON_NAMESPACE"
   delete_manifest_if_present "$ROOT_DIR/manifests/tekton/triggers/trigger-template.yaml" "$TEKTON_NAMESPACE"
@@ -112,9 +124,18 @@ cleanup_tekton() {
   delete_manifest_if_present "$ROOT_DIR/manifests/tekton/pvc/cache-pvc.yaml" "$TEKTON_NAMESPACE"
   delete_manifest_if_present "$ROOT_DIR/manifests/tekton/rbac/rbac.yaml" "$TEKTON_NAMESPACE"
 
-  kubectl -n "$TEKTON_NAMESPACE" delete pipelinerun --all --ignore-not-found >/dev/null 2>&1 || true
-  kubectl -n "$TEKTON_NAMESPACE" delete taskrun --all --ignore-not-found >/dev/null 2>&1 || true
-  kubectl -n "$TEKTON_NAMESPACE" delete secret docker-credentials sonarqube-credentials ssh-key --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n "$TEKTON_NAMESPACE" delete secret docker-credentials sonarqube-credentials ssh-key --ignore-not-found --wait=false --timeout=20s >/dev/null 2>&1 || true
+
+  if [[ "$FORCE_CLEANUP" == "true" ]]; then
+    log "force mode enabled: removing finalizers from stuck Tekton PVCs"
+    kubectl -n "$TEKTON_NAMESPACE" get pvc -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.deletionTimestamp}{"\n"}{end}' 2>/dev/null \
+      | while IFS=$'\t' read -r pvc_name deletion_ts; do
+          [[ -n "${pvc_name:-}" ]] || continue
+          if [[ "$pvc_name" == tekton-cache-pvc* && -n "${deletion_ts:-}" ]]; then
+            kubectl -n "$TEKTON_NAMESPACE" patch pvc "$pvc_name" --type=merge -p '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
+          fi
+        done
+  fi
 
   log "removing Tekton control-plane manifests"
   delete_url_manifest "$TEKTON_DASHBOARD_RELEASE_URL"

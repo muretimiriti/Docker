@@ -23,6 +23,8 @@ SMOKE_TEST_ENABLED="true"
 SMOKE_PATH="${SMOKE_PATH:-/healthz}"
 SMOKE_TIMEOUT="${SMOKE_TIMEOUT:-120s}"
 AUTO_ROLLBACK_ON_FAILURE="true"
+ROLLBACK_MODE="${ARGOCD_ROLLBACK_MODE:-kubernetes}"
+SKIP_PATH_PREFLIGHT="false"
 
 usage() {
   cat <<'USAGE'
@@ -34,7 +36,7 @@ Image selection priority:
 1) --image <ref>
 2) IMAGE_REFERENCE env
 3) latest successful Tekton PipelineRun param: image-reference
-4) image currently in manifests/k8s/node-app/deployment.yaml
+4) image currently in manifests/apps/sample-node-app/deployment.yaml
 
 Options:
   --image <ref>             Full image reference (example: ghcr.io/org/app:sha123)
@@ -56,6 +58,8 @@ Options:
   --smoke-path <path>       HTTP path for post-deploy smoke test (default: /healthz)
   --skip-smoke              Skip post-deploy smoke test
   --no-auto-rollback        Disable rollback when rollout/smoke test fails
+  --rollback-mode <mode>    Rollback mode: kubernetes|gitops (default: kubernetes)
+  --skip-path-preflight     Skip git revision/path existence check before apply
   -h, --help                Show this help
 
 Environment:
@@ -64,6 +68,7 @@ Environment:
   TEKTON_NAMESPACE          Default namespace for Tekton PipelineRun discovery
   ARGO_NOTIFY_WEBHOOK_URL   Same as --notify-webhook-url
   ARGOCD_ENVIRONMENT        Same as --env
+  ARGOCD_ROLLBACK_MODE      Same as --rollback-mode
 USAGE
 }
 
@@ -198,8 +203,41 @@ rollback_deployment() {
   local namespace="$1"
   local deployment_name="$2"
   if [[ "$AUTO_ROLLBACK_ON_FAILURE" == "true" ]]; then
-    log "rolling back deployment/$deployment_name"
+    if [[ "$ROLLBACK_MODE" == "gitops" ]]; then
+      log "rollback mode is gitops; skipping kubectl rollout undo. Use ./scripts/k8s/gitops-rollback.sh for GitOps-native rollback."
+      return 0
+    fi
+    log "rolling back deployment/$deployment_name with kubectl rollout undo"
     kubectl -n "$namespace" rollout undo "deployment/$deployment_name" >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_gitops_source_path_exists() {
+  [[ "$SKIP_PATH_PREFLIGHT" == "false" ]] || return 0
+
+  require_command git
+  local source_remote resolved_ref
+  source_remote="$(git -C "$ROOT_DIR" config --get remote.origin.url 2>/dev/null || true)"
+
+  if [[ -z "$source_remote" || "$source_remote" != "$REPO_URL" ]]; then
+    log "skipping git path preflight because repoURL does not match local origin"
+    return 0
+  fi
+
+  git -C "$ROOT_DIR" fetch --quiet origin >/dev/null 2>&1 || true
+
+  if [[ "$TARGET_REVISION" == "HEAD" ]]; then
+    resolved_ref="origin/HEAD"
+  elif git -C "$ROOT_DIR" rev-parse --verify "origin/${TARGET_REVISION}^{commit}" >/dev/null 2>&1; then
+    resolved_ref="origin/${TARGET_REVISION}"
+  elif git -C "$ROOT_DIR" rev-parse --verify "${TARGET_REVISION}^{commit}" >/dev/null 2>&1; then
+    resolved_ref="${TARGET_REVISION}"
+  else
+    die "Unable to resolve target revision '$TARGET_REVISION' locally. Push/fetch it first or pass --skip-path-preflight."
+  fi
+
+  if ! git -C "$ROOT_DIR" cat-file -e "${resolved_ref}:${APP_PATH}" 2>/dev/null; then
+    die "Path '$APP_PATH' is missing in revision '$TARGET_REVISION' (${resolved_ref}). Push the path to that revision or change --revision/--path."
   fi
 }
 
@@ -427,6 +465,15 @@ while [[ $# -gt 0 ]]; do
       AUTO_ROLLBACK_ON_FAILURE="false"
       shift
       ;;
+    --rollback-mode)
+      [[ $# -ge 2 ]] || die "Missing value for --rollback-mode"
+      ROLLBACK_MODE="$2"
+      shift 2
+      ;;
+    --skip-path-preflight)
+      SKIP_PATH_PREFLIGHT="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -436,6 +483,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$ROLLBACK_MODE" in
+  kubernetes|gitops) ;;
+  *) die "Unsupported --rollback-mode '$ROLLBACK_MODE' (use kubernetes|gitops)" ;;
+esac
 
 if [[ -n "$ENVIRONMENT" ]]; then
   case "$ENVIRONMENT" in
@@ -482,6 +534,9 @@ log "repoURL=$REPO_URL"
 log "targetRevision=$TARGET_REVISION"
 log "path=$APP_PATH"
 log "selected image=$RESOLVED_IMAGE"
+log "rollbackMode=$ROLLBACK_MODE"
+
+ensure_gitops_source_path_exists
 
 ensure_local_image_in_kind_nodes "$RESOLVED_IMAGE"
 

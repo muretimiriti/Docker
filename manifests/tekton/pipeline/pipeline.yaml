@@ -20,6 +20,10 @@ spec:
       type: string
       default: "false"
       description: "Set to true to run SonarQube scan"
+    - name: notification-webhook-url
+      type: string
+      default: ""
+      description: "Optional webhook URL for pipeline success/failure notifications"
 
   workspaces:
     - name: shared-data
@@ -35,6 +39,7 @@ spec:
     # Workspaces: shared-data only
     # ─────────────────────────────────────────
     - name: fetch-source
+      retries: 2
       taskRef:
         name: git-clone
       params:
@@ -118,6 +123,7 @@ spec:
     # cache PVC is RELEASED after restore-cache
     # ─────────────────────────────────────────
     - name: npm-test
+      retries: 1
       runAfter:
         - restore-cache
       taskRef:
@@ -126,13 +132,23 @@ spec:
         - name: source
           workspace: shared-data        # ← shared-data ONLY
 
+    - name: integration-test
+      retries: 1
+      runAfter:
+        - npm-test
+      taskRef:
+        name: npm-integration-test
+      workspaces:
+        - name: source
+          workspace: shared-data
+
     # ─────────────────────────────────────────
     # STAGE 4: Show README
     # Workspaces: shared-data ONLY
     # ─────────────────────────────────────────
     - name: show-readme
       runAfter:
-        - npm-test
+        - integration-test
       taskRef:
         name: show-readme
       workspaces:
@@ -165,6 +181,7 @@ spec:
     # Uses trivy cache copied to shared-data
     # ─────────────────────────────────────────
     - name: sca-scan
+      retries: 1
       runAfter:
         - debug-workspace
       taskRef:
@@ -187,7 +204,7 @@ spec:
     # ─────────────────────────────────────────
     - name: sonarqube-scan
       runAfter:
-        - npm-test
+        - integration-test
       when:
         - input: "$(params.run-sonarqube)"
           operator: in
@@ -291,6 +308,7 @@ spec:
           workspace: shared-data        # ← shared-data ONLY
        
     - name: build-push
+      retries: 1
       runAfter:
         - generate-tag
       taskRef:
@@ -309,6 +327,42 @@ spec:
           workspace: shared-data        # ← shared-data ONLY
         - name: dockerconfig
           workspace: docker-credentials # ← Secret, not PVC
+
+  finally:
+    - name: notify-summary
+      taskSpec:
+        params:
+          - name: webhook-url
+            type: string
+          - name: repo-url
+            type: string
+        steps:
+          - name: print-summary
+            image: alpine:3.20
+            script: |
+              #!/bin/sh
+              set -eu
+              echo "pipeline_status=$(tasks.status)"
+              echo "repo_url=$(params.repo-url)"
+          - name: webhook
+            image: curlimages/curl:8.10.1
+            script: |
+              #!/bin/sh
+              set -eu
+              if [ -z "$(params.webhook-url)" ]; then
+                echo "notification webhook not configured; skipping"
+                exit 0
+              fi
+              payload=$(cat <<JSON
+              {"pipeline":"tekton-trigger-listeners","status":"$(tasks.status)","repo":"$(params.repo-url)","namespace":"$(context.pipelineRun.namespace)","pipelinerun":"$(context.pipelineRun.name)"}
+              JSON
+              )
+              curl -fsS -X POST "$(params.webhook-url)" -H 'Content-Type: application/json' -d "$payload"
+      params:
+        - name: webhook-url
+          value: $(params.notification-webhook-url)
+        - name: repo-url
+          value: $(params.repo-url)
 
 
 

@@ -4,6 +4,7 @@
   "main": "server.js",
   "scripts": {
     "test": "node --test tests/**/*.test.js",
+    "test:integration": "node --test tests/**/*.integration.test.js",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "perf": "node perf/basic.js",
@@ -27,6 +28,7 @@
     "mongoose": "^8.16.4"
   },
   "devDependencies": {
+    "mongodb-memory-server": "^10.1.4",
     "nodemon": "^3.1.11"
   }
 }

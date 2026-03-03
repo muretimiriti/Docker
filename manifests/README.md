@@ -2,8 +2,13 @@
 
 All Kubernetes and Tekton YAML lives under `manifests/`:
 
-- `manifests/k8s/`: runtime workloads (mongo, mongo-express, node-app)
+- `manifests/apps/`: application workloads (sample-node-app)
+- `manifests/platform/`: platform workloads (mongo, mongo-express)
+- `manifests/gitops/`: base + environment overlays for ArgoCD/Kustomize
 - `manifests/tekton/`: CI pipeline, triggers, tasks, RBAC, and PVCs
+- `manifests/observability/`: OTel, Prometheus/Thanos, Loki/Promtail, Tempo, Grafana
+- `manifests/environments/`: env promotion config (`dev`, `staging`, `prod`)
+- `manifests/security/`: External Secrets + Vault store + Kyverno cosign policy
 
 ## Apply Order (Typical)
 
@@ -30,7 +35,9 @@ Manual run (example):
 
 Runtime workloads:
 
-- `manifests/k8s/**`
+- `manifests/apps/**`
+- `manifests/platform/**`
+- `manifests/gitops/overlays/**`
 
 ## Tekton Walkthrough
 

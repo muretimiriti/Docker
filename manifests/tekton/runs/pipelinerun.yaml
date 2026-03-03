@@ -4,6 +4,10 @@ metadata:
   generateName: clone-read-run-
 spec:
   serviceAccountName: tekton-triggers-sa
+  timeouts:
+    pipeline: 45m0s
+    tasks: 40m0s
+    finally: 5m0s
   pipelineRef:
     name: tekton-trigger-listeners
   podTemplate:
@@ -32,3 +36,5 @@ spec:
     value: host.docker.internal:5000/sample-node-app
   - name: run-sonarqube
     value: "false"
+  - name: notification-webhook-url
+    value: ""

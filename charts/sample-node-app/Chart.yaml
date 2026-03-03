@@ -1,0 +1,6 @@
+apiVersion: v2
+name: sample-node-app
+description: Helm chart for sample-node-app
+version: 0.1.0
+appVersion: "1.0.0"
+type: application

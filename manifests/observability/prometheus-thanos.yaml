@@ -18,6 +18,21 @@ data:
       - job_name: prometheus
         static_configs:
           - targets: ["127.0.0.1:9090"]
+      - job_name: kube-state-metrics
+        static_configs:
+          - targets: ["kube-state-metrics.observability.svc.cluster.local:8080"]
+      - job_name: argocd-metrics
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["argocd-metrics.argocd.svc.cluster.local:8082"]
+      - job_name: tekton-pipelines-controller
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["tekton-pipelines-controller.tekton-pipelines.svc.cluster.local:9090"]
+      - job_name: tekton-triggers-controller
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["tekton-triggers-controller.tekton-pipelines.svc.cluster.local:9000"]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -133,3 +148,72 @@ spec:
     - name: grpc
       port: 10901
       targetPort: 10901
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-state-metrics
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-state-metrics
+  template:
+    metadata:
+      labels:
+        app: kube-state-metrics
+    spec:
+      serviceAccountName: kube-state-metrics
+      containers:
+        - name: kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-state-metrics
+  namespace: observability
+spec:
+  selector:
+    app: kube-state-metrics
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-state-metrics
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-state-metrics
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "services", "resourcequotas", "replicationcontrollers", "limitranges", "persistentvolumeclaims", "persistentvolumes", "namespaces"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "daemonsets", "deployments", "replicasets"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-state-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-state-metrics
+subjects:
+  - kind: ServiceAccount
+    name: kube-state-metrics
+    namespace: observability

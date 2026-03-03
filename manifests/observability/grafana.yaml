@@ -8,21 +8,210 @@ data:
     apiVersion: 1
     datasources:
       - name: Thanos
+        uid: thanos
         type: prometheus
         access: proxy
         url: http://thanos-query.observability.svc.cluster.local:9090
         isDefault: true
       - name: Loki
+        uid: loki
         type: loki
         access: proxy
         url: http://loki.observability.svc.cluster.local:3100
       - name: Tempo
+        uid: tempo
         type: tempo
         access: proxy
         url: http://tempo.observability.svc.cluster.local:3200
         jsonData:
           tracesToLogsV2:
-            datasourceUid: Loki
+            datasourceUid: loki
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-providers
+  namespace: observability
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: CI-CD
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: observability
+data:
+  cicd-overview.json: |
+    {
+      "id": null,
+      "title": "CI/CD + App Observability",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "15s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Sample App Logs",
+          "type": "logs",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "targets": [
+            { "expr": "{namespace=\"default\",pod=~\"sample-node-app.*\"}", "refId": "A" }
+          ],
+          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 }
+        },
+        {
+          "id": 2,
+          "title": "Pipeline Failures (Tekton)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "targets": [
+            {
+              "expr": "sum(rate(tekton_pipelines_controller_pipelinerun_count{status=\"failed\"}[5m]))",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+        },
+        {
+          "id": 3,
+          "title": "ArgoCD Sync Errors",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "targets": [
+            {
+              "expr": "sum(argocd_app_sync_total{phase=\"Error\"})",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+        },
+        {
+          "id": 4,
+          "title": "Sample App Pod Restarts",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "targets": [
+            {
+              "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"default\",pod=~\"sample-node-app.*\"})",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 }
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alert-rules
+  namespace: observability
+data:
+  cicd-alerts.yaml: |
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: cicd-health
+        folder: CI-CD
+        interval: 1m
+        rules:
+          - uid: app-error-logs
+            title: Sample App Error Logs
+            condition: A
+            data:
+              - refId: A
+                datasourceUid: loki
+                model:
+                  datasource:
+                    type: loki
+                    uid: loki
+                  editorMode: code
+                  expr: sum(count_over_time({namespace="default",pod=~"sample-node-app.*"} |= "error" [5m]))
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  queryType: instant
+                  refId: A
+            noDataState: NoData
+            execErrState: Error
+            for: 2m
+            annotations:
+              summary: sample-node-app is producing error logs.
+            labels:
+              severity: warning
+          - uid: pod-restarts
+            title: Sample App Pod Restarts
+            condition: A
+            data:
+              - refId: A
+                datasourceUid: thanos
+                model:
+                  datasource:
+                    type: prometheus
+                    uid: thanos
+                  expr: increase(kube_pod_container_status_restarts_total{namespace="default",pod=~"sample-node-app.*"}[10m]) > 0
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  refId: A
+            noDataState: NoData
+            execErrState: Error
+            for: 1m
+            annotations:
+              summary: sample-node-app restarted recently.
+            labels:
+              severity: warning
+          - uid: argocd-sync-failure
+            title: ArgoCD Sync Failures
+            condition: A
+            data:
+              - refId: A
+                datasourceUid: thanos
+                model:
+                  datasource:
+                    type: prometheus
+                    uid: thanos
+                  expr: sum(rate(argocd_app_sync_total{phase="Error"}[5m])) > 0
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  refId: A
+            noDataState: NoData
+            execErrState: Error
+            for: 2m
+            annotations:
+              summary: ArgoCD sync errors detected.
+            labels:
+              severity: critical
+          - uid: tekton-pipeline-failure
+            title: Tekton Pipeline Failures
+            condition: A
+            data:
+              - refId: A
+                datasourceUid: thanos
+                model:
+                  datasource:
+                    type: prometheus
+                    uid: thanos
+                  expr: sum(rate(tekton_pipelines_controller_pipelinerun_count{status="failed"}[5m])) > 0
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  refId: A
+            noDataState: NoData
+            execErrState: Error
+            for: 2m
+            annotations:
+              summary: Tekton pipeline failures detected.
+            labels:
+              severity: critical
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -51,15 +240,34 @@ spec:
               value: "true"
             - name: GF_AUTH_ANONYMOUS_ORG_ROLE
               value: Viewer
+            - name: GF_UNIFIED_ALERTING_ENABLED
+              value: "true"
+            - name: GF_ALERTING_ENABLED
+              value: "true"
           ports:
             - containerPort: 3000
           volumeMounts:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-providers
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+            - name: alert-rules
+              mountPath: /etc/grafana/provisioning/alerting
       volumes:
         - name: datasources
           configMap:
             name: grafana-datasources
+        - name: dashboard-providers
+          configMap:
+            name: grafana-dashboard-providers
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+        - name: alert-rules
+          configMap:
+            name: grafana-alert-rules
 ---
 apiVersion: v1
 kind: Service

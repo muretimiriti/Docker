@@ -1,0 +1,56 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: npm-integration-test
+spec:
+  description: |
+    Install dependencies and run Mongo integration tests.
+  params:
+    - name: WORKDIR
+      type: string
+      default: .
+      description: "Subdirectory containing package.json"
+    - name: STRICT
+      type: string
+      default: "true"
+      description: "If true, fail when no integration test command/files are found"
+  workspaces:
+    - name: source
+      description: Cloned source
+    - name: cache
+      description: Cache workspace (recommended)
+      optional: true
+  steps:
+    - name: install-test-integration
+      image: node:24-alpine
+      env:
+        - name: NPM_CONFIG_CACHE
+          value: /workspace/cache/npm
+      workingDir: /workspace/source/$(params.WORKDIR)
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+        node -v
+        npm -v
+        npm ci --prefer-offline --no-audit
+        if npm run | grep -q "test:integration"; then
+          echo "Running npm script: test:integration"
+          npm run test:integration
+          exit 0
+        fi
+
+        if find tests -type f -name '*.integration.test.js' | grep -q .; then
+          echo "npm script test:integration is missing; running node test fallback"
+          find tests -type f -name '*.integration.test.js' -print0 | xargs -0 node --test
+          exit 0
+        fi
+
+        if [ "$(params.STRICT)" = "true" ]; then
+          echo "No integration test command/files found and STRICT=true"
+          echo "Expected one of:"
+          echo "  1) npm script test:integration"
+          echo "  2) tests/**/*.integration.test.js files"
+          exit 1
+        fi
+
+        echo "No integration tests found; skipping because STRICT=false"

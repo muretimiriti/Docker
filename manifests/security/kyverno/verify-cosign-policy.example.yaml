@@ -1,0 +1,27 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-sample-node-app-signature
+spec:
+  validationFailureAction: Audit
+  background: false
+  rules:
+    - name: verify-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "host.docker.internal:5000/sample-node-app*"
+          mutateDigest: true
+          required: true
+          verifyDigest: true
+          attestors:
+            - entries:
+                - keys:
+                    secretRef:
+                      name: cosign-public-key
+                      namespace: default
+                      key: cosign.pub

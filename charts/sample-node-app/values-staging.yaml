@@ -1,0 +1,6 @@
+replicaCount: 2
+hpa:
+  minReplicas: 2
+  maxReplicas: 6
+image:
+  tag: latest

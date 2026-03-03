@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sample-node-app.fullname" . }}
+  namespace: {{ default .Release.Namespace .Values.namespaceOverride }}
+spec:
+  selector:
+    app: {{ include "sample-node-app.name" . }}
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}
+      protocol: TCP
+      name: http
