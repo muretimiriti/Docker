@@ -24,6 +24,10 @@ spec:
       type: string
       default: ""
       description: "Optional webhook URL for pipeline success/failure notifications"
+    - name: integration-tests-strict
+      type: string
+      default: "false"
+      description: "If true, fail when integration tests are missing"
 
   workspaces:
     - name: shared-data
@@ -138,6 +142,9 @@ spec:
         - npm-test
       taskRef:
         name: npm-integration-test
+      params:
+        - name: STRICT
+          value: "$(params.integration-tests-strict)"
       workspaces:
         - name: source
           workspace: shared-data

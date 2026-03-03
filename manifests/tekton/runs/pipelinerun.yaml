@@ -38,3 +38,5 @@ spec:
     value: "false"
   - name: notification-webhook-url
     value: ""
+  - name: integration-tests-strict
+    value: "false"

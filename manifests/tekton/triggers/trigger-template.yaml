@@ -10,6 +10,8 @@ spec:
       default: "false"
     - name: notification-webhook-url
       default: ""
+    - name: integration-tests-strict
+      default: "false"
   
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
@@ -33,6 +35,8 @@ spec:
             value: $(tt.params.run-sonarqube)
           - name: notification-webhook-url
             value: $(tt.params.notification-webhook-url)
+          - name: integration-tests-strict
+            value: $(tt.params.integration-tests-strict)
         workspaces:
           - name: shared-data
             volumeClaimTemplate:
