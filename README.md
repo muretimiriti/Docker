@@ -19,14 +19,15 @@ Data:
 Local Dev / Packaging:
 
 - Docker + Docker Compose
-- `scripts/start.sh`, `scripts/stop.sh`, `scripts/tests.sh`
+- `scripts/docker/docker-start.sh`, `scripts/docker/docker-stop.sh`, `scripts/tests/tests.sh`
 
 CI/CD:
 
 - Tekton Pipelines + Tekton Triggers (manifests in `manifests/tekton/`)
 - Trivy SCA scan task (in-repo)
 - SonarQube scan task (in-repo, optional via pipeline param)
-- ArgoCD deployment helper (`scripts/argocd.sh`) with image auto-selection
+- ArgoCD deployment helper (`scripts/k8s/start-argo.sh`) with image auto-selection
+- Observability stack (`manifests/observability/`): OTel, Prometheus+Thanos, Loki, Tempo, Grafana
 
 ## Repo Layout
 
@@ -61,7 +62,7 @@ Optional (non-Docker local run):
 2. Start the stack
 
 ```bash
-./scripts/start.sh
+./scripts/docker/docker-start.sh
 ```
 
 3. Open services
@@ -72,7 +73,7 @@ Optional (non-Docker local run):
 4. Stop the stack.
 
 ```bash
-./scripts/stop.sh
+./scripts/docker/docker-stop.sh
 ```
 
 ### Production-like Compose (Optional)
@@ -109,7 +110,7 @@ npm run perf
 Or run the project checks via script:
 
 ```bash
-./scripts/tests.sh
+./scripts/tests/tests.sh
 ```
 
 ## Linting And Formatting
@@ -173,7 +174,7 @@ All Kubernetes and Tekton YAML files are organized under `manifests/`.
 Use the setup script to install Tekton (pipelines/triggers/dashboard), create required secrets, and apply all Tekton manifests:
 
 ```bash
-./scripts/tekton.sh
+./scripts/k8s/start-tekton.sh
 ```
 
 Required for registry push:
@@ -217,14 +218,15 @@ If the secret is missing, the task will skip (so the pipeline still runs).
 Use the ArgoCD script to select an image and deploy using a GitOps `Application`:
 
 ```bash
-./scripts/argocd.sh --repo-url <your-repo-url>
+./scripts/k8s/start-argo.sh --repo-url <your-repo-url>
 ```
 
 Image selection priority:
 
 - `--image <ref>`
 - `IMAGE_REFERENCE` env var
-- latest successful Tekton `PipelineRun` param `image-reference`
+- latest successful Tekton `build-push` TaskRun result `IMAGE_URL` (tagged image)
+- fallback to latest successful Tekton `PipelineRun` param `image-reference`
 - fallback to `manifests/k8s/node-app/deployment.yaml` image
 
 Useful flags:
@@ -245,6 +247,33 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.pas
 
 Then open `https://localhost:8080` and log in as `admin`.
 
+### Observability (OTel + Thanos + Loki + Grafana)
+
+Start the observability stack:
+
+```bash
+./scripts/k8s/start-observability.sh
+```
+
+Then open Grafana:
+
+```bash
+./scripts/port-forwarding.sh grafana 3000
+```
+
+Open `http://localhost:3000`.
+
+Provisioned Grafana datasources:
+
+- `Thanos` (metrics)
+- `Loki` (logs)
+- `Tempo` (traces)
+
+Default Grafana credentials:
+
+- user: `admin`
+- password: `admin`
+
 ## Security Notes (Important)
 
 - Do not commit real credentials. `.env` is ignored by git.
@@ -252,8 +281,9 @@ Then open `https://localhost:8080` and log in as `admin`.
 
 ## Scripts
 
-- `./scripts/start.sh`: brings up Docker Compose (`up --build`)
-- `./scripts/stop.sh`: brings down Docker Compose (`down`)
-- `./scripts/tests.sh`: runs `npm test` and `npm run perf`
-- `./scripts/tekton.sh`: automates Tekton install + manifests + secret setup
-- `./scripts/argocd.sh`: picks image, creates/updates ArgoCD `Application`, and deploys to cluster
+- `./scripts/docker/docker-start.sh`: brings up Docker Compose (`up --build`)
+- `./scripts/docker/docker-stop.sh`: brings down Docker Compose (`down`)
+- `./scripts/tests/tests.sh`: runs `npm test` and `npm run perf`
+- `./scripts/k8s/start-tekton.sh`: automates Tekton install + manifests + secret setup
+- `./scripts/k8s/start-argo.sh`: picks image, creates/updates ArgoCD `Application`, and deploys to cluster
+- `./scripts/k8s/start-observability.sh`: deploys OTel, Prometheus+Thanos, Loki, Tempo, and Grafana

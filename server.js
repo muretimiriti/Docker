@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const otel = require('./otel');
 const { createApp } = require('./app');
 
 // Load environment variables from .env
@@ -14,6 +15,16 @@ const app = createApp();
 
 // Start Server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
+
+process.on('SIGTERM', async () => {
+  await otel.stop();
+  server.close(() => process.exit(0));
+});
+
+process.on('SIGINT', async () => {
+  await otel.stop();
+  server.close(() => process.exit(0));
 });

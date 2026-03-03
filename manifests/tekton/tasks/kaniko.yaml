@@ -52,10 +52,16 @@ spec:
         echo "=========================================="
         
         mkdir -p /kaniko/.docker
-        
-        if [ -f "$(workspaces.dockerconfig.path)/config.json" ]; then
+
+        REGISTRY_HOST="$(params.IMAGE)"
+        REGISTRY_HOST="${REGISTRY_HOST%%/*}"
+
+        if [ "$REGISTRY_HOST" = "host.docker.internal:5000" ]; then
+          printf '%s\n' '{"auths":{"host.docker.internal:5000":{}}}' > /kaniko/.docker/config.json
+          echo "✅ Local registry config generated for $REGISTRY_HOST"
+        elif [ -f "$(workspaces.dockerconfig.path)/config.json" ]; then
           cp $(workspaces.dockerconfig.path)/config.json /kaniko/.docker/config.json
-          echo "✅ Docker credentials configured"
+          echo "✅ Docker credentials configured from secret"
         else
           echo "❌ Missing config.json in dockerconfig workspace" >&2
           echo "Available files:"
@@ -80,6 +86,8 @@ spec:
         - --destination=$(params.IMAGE):$(params.IMAGE_TAG)
         - --destination=$(params.IMAGE):latest
         - --digest-file=$(results.IMAGE_DIGEST.path)
+        - --insecure
+        - --insecure-pull
         - --snapshot-mode=redo
         - --verbosity=info
         - --skip-tls-verify

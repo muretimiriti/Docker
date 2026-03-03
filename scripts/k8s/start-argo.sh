@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
 APP_NAME="${ARGOCD_APP_NAME:-tech-stack}"
@@ -11,7 +11,7 @@ DEST_NAMESPACE="${ARGOCD_DEST_NAMESPACE:-default}"
 TARGET_REVISION="${ARGOCD_TARGET_REVISION:-HEAD}"
 APP_PATH="${ARGOCD_APP_PATH:-manifests/k8s}"
 TEKTON_NAMESPACE="${TEKTON_NAMESPACE:-default}"
-DEPLOYMENT_NAME="${ARGOCD_DEPLOYMENT_NAME:-my-node-app}"
+DEPLOYMENT_NAME="${ARGOCD_DEPLOYMENT_NAME:-sample-node-app}"
 IMAGE_REFERENCE="${IMAGE_REFERENCE:-}"
 INSTALL_ARGOCD="false"
 WAIT_ROLLOUT="true"
@@ -20,7 +20,7 @@ GITOPS_SYNC="true"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/argocd.sh [options]
+Usage: ./scripts/k8s/start-argo.sh [options]
 
 Creates/updates an ArgoCD Application for this repo, selects an image, and deploys to the cluster.
 
@@ -40,7 +40,7 @@ Options:
   --argocd-namespace <ns>   Namespace where ArgoCD runs (default: argocd)
   --dest-namespace <ns>     Namespace for workload deployment (default: default)
   --tekton-namespace <ns>   Namespace used to discover PipelineRuns (default: default)
-  --deployment <name>       Deployment to verify rollout for (default: my-node-app)
+  --deployment <name>       Deployment to verify rollout for (default: sample-node-app)
   --install-argocd          Install ArgoCD core manifests into argocd namespace
   --no-sync                 Disable ArgoCD automated sync policy
   --no-wait                 Do not wait for deployment rollout
@@ -70,6 +70,47 @@ require_command() {
   fi
 }
 
+duration_to_seconds() {
+  local value="$1"
+  if [[ "$value" =~ ^([0-9]+)s$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return
+  fi
+  if [[ "$value" =~ ^([0-9]+)m$ ]]; then
+    printf '%s\n' "$((BASH_REMATCH[1] * 60))"
+    return
+  fi
+  if [[ "$value" =~ ^([0-9]+)h$ ]]; then
+    printf '%s\n' "$((BASH_REMATCH[1] * 3600))"
+    return
+  fi
+  die "Unsupported duration format '$value'. Use Ns, Nm, or Nh (example: 180s, 3m)"
+}
+
+wait_for_deployment_exists() {
+  local namespace="$1"
+  local deployment_name="$2"
+  local timeout="$3"
+  local timeout_seconds elapsed
+
+  timeout_seconds="$(duration_to_seconds "$timeout")"
+  elapsed=0
+
+  while ! kubectl -n "$namespace" get deployment "$deployment_name" >/dev/null 2>&1; do
+    if (( elapsed >= timeout_seconds )); then
+      die "deployment/$deployment_name not found in namespace $namespace within $timeout"
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+}
+
+resolve_argocd_managed_deployments() {
+  kubectl -n "$ARGOCD_NAMESPACE" get application "$APP_NAME" \
+    -o jsonpath='{range .status.resources[*]}{.kind}{"\t"}{.name}{"\n"}{end}' 2>/dev/null \
+    | awk -F'\t' '$1 == "Deployment" {print $2}'
+}
+
 extract_manifest_image() {
   local image_line
   image_line="$(awk '/image:/{print $2; exit}' "$ROOT_DIR/manifests/k8s/node-app/deployment.yaml" 2>/dev/null || true)"
@@ -77,7 +118,7 @@ extract_manifest_image() {
 }
 
 resolve_latest_tekton_image() {
-  local names pr_name status image_ref
+  local names pr_name status image_ref build_push_run
   names="$(kubectl -n "$TEKTON_NAMESPACE" get pipelineruns.tekton.dev --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
 
   [[ -n "$names" ]] || return 0
@@ -93,6 +134,15 @@ resolve_latest_tekton_image() {
     status="$(kubectl -n "$TEKTON_NAMESPACE" get pipelinerun "$pr_name" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}' 2>/dev/null || true)"
     [[ "$status" == "True" ]] || continue
 
+    # Prefer exact tagged image produced by the build-push TaskRun result.
+    build_push_run="${pr_name}-build-push"
+    image_ref="$(kubectl -n "$TEKTON_NAMESPACE" get taskrun "$build_push_run" -o jsonpath='{.status.results[?(@.name=="IMAGE_URL")].value}' 2>/dev/null || true)"
+    if [[ -n "$image_ref" ]]; then
+      printf '%s\n' "$image_ref"
+      return 0
+    fi
+
+    # Fallback: pipeline param (base image name, often without tag).
     image_ref="$(kubectl -n "$TEKTON_NAMESPACE" get pipelinerun "$pr_name" -o jsonpath='{.spec.params[?(@.name=="image-reference")].value}' 2>/dev/null || true)"
     if [[ -n "$image_ref" ]]; then
       printf '%s\n' "$image_ref"
@@ -150,9 +200,16 @@ EOF
     sync_policy_block=""
   fi
 
-  local image_name image_tag
-  image_name="$(echo "$RESOLVED_IMAGE" | cut -d: -f1)"
-  image_tag="$(echo "$RESOLVED_IMAGE" | cut -d: -f2)"
+  local image_name image_tag image_no_digest image_tail
+  image_no_digest="${RESOLVED_IMAGE%@*}"
+  image_tail="${image_no_digest##*/}"
+  if [[ "$image_tail" == *:* ]]; then
+    image_name="${image_no_digest%:*}"
+    image_tag="${image_no_digest##*:}"
+  else
+    image_name="$image_no_digest"
+    image_tag="latest"
+  fi
 
   cat <<EOF
 apiVersion: argoproj.io/v1alpha1
@@ -290,10 +347,19 @@ log "applying ArgoCD Application $APP_NAME"
 build_application_manifest | kubectl apply -f -
 
 if [[ "$WAIT_ROLLOUT" == "true" ]]; then
+  managed_deployments="$(resolve_argocd_managed_deployments || true)"
+  if [[ -n "$managed_deployments" ]] && ! echo "$managed_deployments" | grep -Fxq "$DEPLOYMENT_NAME"; then
+    if echo "$managed_deployments" | grep -Fxq "my-node-app"; then
+      die "ArgoCD still manages deployment/my-node-app, but wait target is deployment/$DEPLOYMENT_NAME. Push updated manifests to repo and resync ArgoCD (or run with --deployment my-node-app / --no-wait)."
+    fi
+    die "ArgoCD resources do not include deployment/$DEPLOYMENT_NAME. Managed deployments: $(echo "$managed_deployments" | tr '\n' ' ' | sed 's/[[:space:]]*$//'). Use --deployment with a managed name or --no-wait."
+  fi
+
+  log "waiting for deployment to be created: deployment/$DEPLOYMENT_NAME (namespace=$DEST_NAMESPACE)"
+  wait_for_deployment_exists "$DEST_NAMESPACE" "$DEPLOYMENT_NAME" "$WAIT_TIMEOUT"
   log "waiting for rollout: deployment/$DEPLOYMENT_NAME (namespace=$DEST_NAMESPACE)"
   kubectl -n "$DEST_NAMESPACE" rollout status "deployment/$DEPLOYMENT_NAME" --timeout="$WAIT_TIMEOUT"
 fi
 
 log "deployment flow completed"
-
-
+log "help: ./scripts/k8s/start-argo.sh --help"

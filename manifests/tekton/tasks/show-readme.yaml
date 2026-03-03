@@ -4,7 +4,7 @@ metadata:
   name: show-readme
 spec:
   description: |
-    Show README.md content in workspace source.
+    Show readme content in workspace source.
   workspaces:
     - name: source
   steps:
@@ -19,10 +19,12 @@ spec:
         echo "Source contents:"
         ls -la /workspace/source
         echo ""
-        echo "README:"
-        if [ -f /workspace/source/README.md ]; then
+        echo "README/readme:"
+        if [ -f /workspace/source/readme.md ]; then
+          cat /workspace/source/readme.md
+        elif [ -f /workspace/source/README.md ]; then
           cat /workspace/source/README.md
         else
-          echo "No README.md found under /workspace/source"
+          echo "No readme.md or README.md found under /workspace/source"
           find /workspace/source -maxdepth 3 -type f -iname 'readme*' -print
         fi

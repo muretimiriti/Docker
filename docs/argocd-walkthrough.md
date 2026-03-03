@@ -1,13 +1,13 @@
 # ArgoCD Walkthrough (Image Pick + Deploy)
 
-This document shows how to deploy this repo to Kubernetes with ArgoCD using the helper script in `scripts/argocd.sh`.
+This document shows how to deploy this repo to Kubernetes with ArgoCD using the helper script in `scripts/k8s/start-argo.sh`.
 
 The script can:
 
 - create/update an ArgoCD `Application`
 - pick an image automatically
 - deploy workloads from `manifests/k8s/`
-- wait for rollout of `my-node-app`
+- wait for rollout of `sample-node-app`
 
 ## Prerequisites
 
@@ -34,19 +34,19 @@ The script resolves the deploy image in this order:
 Run:
 
 ```bash
-./scripts/argocd.sh --repo-url <your-repo-url>
+./scripts/k8s/start-argo.sh --repo-url <your-repo-url>
 ```
 
 If ArgoCD is not installed yet:
 
 ```bash
-./scripts/argocd.sh --repo-url <your-repo-url> --install-argocd
+./scripts/k8s/start-argo.sh --repo-url <your-repo-url> --install-argocd
 ```
 
 ## 2) Deploy A Specific Image
 
 ```bash
-./scripts/argocd.sh \
+./scripts/k8s/start-argo.sh \
   --repo-url <your-repo-url> \
   --image ghcr.io/<org>/<repo>:<tag>
 ```
@@ -55,7 +55,7 @@ Equivalent environment variable:
 
 ```bash
 IMAGE_REFERENCE=ghcr.io/<org>/<repo>:<tag> \
-./scripts/argocd.sh --repo-url <your-repo-url>
+./scripts/k8s/start-argo.sh --repo-url <your-repo-url>
 ```
 
 ## 3) Common Options
@@ -82,13 +82,13 @@ Check workloads:
 
 ```bash
 kubectl -n default get deploy,svc,pods
-kubectl -n default rollout status deployment/my-node-app
+kubectl -n default rollout status deployment/sample-node-app
 ```
 
 Check final image in deployment:
 
 ```bash
-kubectl -n default get deployment my-node-app \
+kubectl -n default get deployment sample-node-app \
   -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
 ```
 

@@ -7,8 +7,17 @@ x-logging: &default_logging
 
 services:
 
-  my-node-app: &node_app
-    image: my-node-app
+  local-registry:
+    image: registry:2
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    logging: *default_logging
+
+  sample-node-app: &node_app
+    image: sample-node-app
     build:
       context: .
       dockerfile: Dockerfile
@@ -47,7 +56,7 @@ services:
   # Optional "production-like" app container:
   # - no bind-mounts (immutable image)
   # - runs `node server.js`
-  my-node-app-prod:
+  sample-node-app-prod:
     <<: *node_app
     profiles: ["prod"]
     command: ["node", "server.js"]

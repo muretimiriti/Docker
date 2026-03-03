@@ -22,7 +22,7 @@ spec:
           - name: repo-url
             value: $(tt.params.repo-url)
           - name: image-reference
-            value: muretimiriti/test1  # ← Hardcoded base name, NO TAG
+            value: host.docker.internal:5000/sample-node-app
           - name: run-sonarqube
             value: $(tt.params.run-sonarqube)
         workspaces:

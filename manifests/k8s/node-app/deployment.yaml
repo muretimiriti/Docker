@@ -1,23 +1,33 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: my-node-app
+  name: sample-node-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: my-node-app
+      app: sample-node-app
   template:
     metadata:
       labels:
-        app: my-node-app
+        app: sample-node-app
     spec:
       containers:
         - name: app
-          image: muretimiriti/test1:latest    # ← Fixed to match pipeline image
+          image: host.docker.internal:5000/sample-node-app:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
           env:
             - name: MONGO_URI
               value: mongodb://admin:admin123@mongo:27017/admin
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: sample-node-app
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_METRICS_EXPORTER
+              value: otlp

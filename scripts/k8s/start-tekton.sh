@@ -2,16 +2,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 NAMESPACE="${TEKTON_NAMESPACE:-default}"
 INSTALL_TEKTON="true"
 APPLY_TRIGGERS="true"
 INSTALL_DASHBOARD="true"
+RUN_PIPELINE="${RUN_PIPELINE_ON_SETUP:-true}"
 
 usage() {
   cat <<'USAGE'
-Usage: ./scripts/tekton.sh [options]
+Usage: ./scripts/k8s/start-tekton.sh [options]
 
 Automates Tekton setup for this repository:
 - Optionally installs Tekton Pipelines + Triggers + Dashboard UI
@@ -22,11 +23,16 @@ Options:
   --skip-install         Skip installing Tekton Pipelines/Triggers/Dashboard
   --skip-dashboard       Install Pipelines/Triggers but skip Tekton Dashboard UI install
   --skip-triggers        Do not apply trigger manifests
+  --skip-run             Do not create a PipelineRun after setup
   --namespace <name>     Kubernetes namespace to target (default: TEKTON_NAMESPACE or default)
   -h, --help             Show this help message
 
 Environment:
   TEKTON_NAMESPACE       Namespace for all kubectl operations (default: default)
+  RUN_PIPELINE_ON_SETUP  Set to false to skip creating a PipelineRun (default: true)
+  TEKTON_REPO_URL        Git repo URL for pipeline param repo-url (default: git remote origin)
+  TEKTON_IMAGE_REFERENCE Base image name for pipeline param image-reference (default: derived from node app deployment image)
+  RUN_SONARQUBE          true/false to set pipeline param run-sonarqube (default: false)
   DOCKER_CONFIG_JSON     Path to docker config.json (default: $DOCKER_CONFIG/config.json or $HOME/.docker/config.json)
   SONAR_HOST_URL         If set with SONAR_TOKEN, creates sonarqube-credentials secret
   SONAR_TOKEN            If set with SONAR_HOST_URL, creates sonarqube-credentials secret
@@ -56,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-triggers)
       APPLY_TRIGGERS="false"
+      shift
+      ;;
+    --skip-run)
+      RUN_PIPELINE="false"
       shift
       ;;
     --namespace)
@@ -105,6 +115,39 @@ wait_for_tekton_crds() {
   kubectl wait --for=condition=Established --timeout=240s crd/triggertemplates.triggers.tekton.dev
 }
 
+wait_for_tekton_deployments() {
+  log "waiting for Tekton Pipelines deployments"
+  kubectl -n tekton-pipelines rollout status deployment/tekton-pipelines-controller --timeout=300s
+  kubectl -n tekton-pipelines rollout status deployment/tekton-events-controller --timeout=300s
+  kubectl -n tekton-pipelines rollout status deployment/tekton-pipelines-webhook --timeout=300s
+
+  log "waiting for Tekton Triggers deployments"
+  kubectl -n tekton-pipelines rollout status deployment/tekton-triggers-controller --timeout=300s
+  kubectl -n tekton-pipelines rollout status deployment/tekton-triggers-webhook --timeout=300s
+  kubectl -n tekton-pipelines rollout status deployment/tekton-triggers-core-interceptors --timeout=300s
+
+  if [[ "$INSTALL_DASHBOARD" == "true" ]]; then
+    local dashboard_ns=""
+    if kubectl -n tekton-dashboard get deployment tekton-dashboard >/dev/null 2>&1; then
+      dashboard_ns="tekton-dashboard"
+    elif kubectl -n tekton-pipelines get deployment tekton-dashboard >/dev/null 2>&1; then
+      dashboard_ns="tekton-pipelines"
+    else
+      die "Tekton Dashboard deployment not found in tekton-dashboard or tekton-pipelines namespace"
+    fi
+
+    log "waiting for Tekton Dashboard deployment (namespace=$dashboard_ns)"
+    kubectl -n "$dashboard_ns" rollout status deployment/tekton-dashboard --timeout=300s
+  fi
+}
+
+configure_tekton_feature_flags() {
+  log "configuring Tekton feature flags (coschedule=disabled)"
+  kubectl -n tekton-pipelines patch configmap feature-flags \
+    --type merge \
+    -p '{"data":{"coschedule":"disabled"}}' >/dev/null
+}
+
 install_tekton_components() {
   log "installing Tekton Pipelines (latest)"
   kubectl apply -f "https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml"
@@ -123,6 +166,8 @@ install_tekton_components() {
   fi
 
   wait_for_tekton_crds
+  wait_for_tekton_deployments
+  configure_tekton_feature_flags
 }
 
 ensure_namespace() {
@@ -205,7 +250,90 @@ ensure_ssh_secret_if_configured() {
   k annotate secret ssh-key tekton.dev/git-0=github.com --overwrite
 }
 
-log "starting setup (namespace=$NAMESPACE, install_tekton=$INSTALL_TEKTON, install_dashboard=$INSTALL_DASHBOARD, apply_triggers=$APPLY_TRIGGERS)"
+infer_repo_url() {
+  git -C "$ROOT_DIR" config --get remote.origin.url 2>/dev/null || true
+}
+
+extract_node_image_reference_base() {
+  local deployment_file image_no_digest image_ref
+  deployment_file="$ROOT_DIR/manifests/k8s/node-app/deployment.yaml"
+
+  image_ref="$(awk '/image:/{print $2; exit}' "$deployment_file" 2>/dev/null || true)"
+  [[ -n "$image_ref" ]] || return 0
+
+  image_no_digest="${image_ref%@*}"
+  if [[ "$image_no_digest" =~ .+:[^/]+$ ]]; then
+    printf '%s\n' "${image_no_digest%:*}"
+    return
+  fi
+
+  printf '%s\n' "$image_no_digest"
+}
+
+create_pipeline_run_for_node_app() {
+  local repo_url image_reference run_sonarqube created_run_name
+
+  repo_url="${TEKTON_REPO_URL:-$(infer_repo_url)}"
+  image_reference="${TEKTON_IMAGE_REFERENCE:-$(extract_node_image_reference_base)}"
+  run_sonarqube="${RUN_SONARQUBE:-false}"
+
+  [[ -n "$repo_url" ]] || die "Unable to resolve repo URL; set TEKTON_REPO_URL"
+  [[ -n "$image_reference" ]] || die "Unable to resolve image reference base; set TEKTON_IMAGE_REFERENCE"
+  [[ "$run_sonarqube" == "true" || "$run_sonarqube" == "false" ]] || die "RUN_SONARQUBE must be true or false"
+
+  if [[ "$image_reference" == host.docker.internal:5000/* ]]; then
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsS "http://localhost:5000/v2/" >/dev/null 2>&1 || die "Local registry is not reachable at http://localhost:5000/v2/ (start it first, e.g. docker compose up -d local-registry)"
+    else
+      log "warning: curl not found; skipping local registry reachability check"
+    fi
+  fi
+
+  log "creating PipelineRun for Node.js app (repo-url=$repo_url, image-reference=$image_reference, run-sonarqube=$run_sonarqube)"
+  cat <<EOF | k create -f -
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: nodejs-app-run-
+  labels:
+    app.kubernetes.io/name: sample-node-app
+spec:
+  serviceAccountName: tekton-triggers-sa
+  pipelineRef:
+    name: tekton-trigger-listeners
+  podTemplate:
+    securityContext:
+      fsGroup: 65532
+  workspaces:
+    - name: shared-data
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+    - name: docker-credentials
+      secret:
+        secretName: docker-credentials
+    - name: cache
+      persistentVolumeClaim:
+        claimName: tekton-cache-pvc
+  params:
+    - name: repo-url
+      value: $repo_url
+    - name: image-reference
+      value: $image_reference
+    - name: run-sonarqube
+      value: "$run_sonarqube"
+EOF
+
+  created_run_name="$(k get pipelineruns --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | tail -n 1)"
+  log "PipelineRun started: $created_run_name"
+  log "follow logs: tkn -n $NAMESPACE pipelinerun logs -f $created_run_name"
+}
+
+log "starting setup (namespace=$NAMESPACE, install_tekton=$INSTALL_TEKTON, install_dashboard=$INSTALL_DASHBOARD, apply_triggers=$APPLY_TRIGGERS, run_pipeline=$RUN_PIPELINE)"
 
 ensure_namespace
 
@@ -213,6 +341,7 @@ if [[ "$INSTALL_TEKTON" == "true" ]]; then
   install_tekton_components
 else
   log "skipping Tekton component install"
+  configure_tekton_feature_flags
 fi
 
 ensure_docker_secret
@@ -236,7 +365,14 @@ else
   log "skipping trigger manifests"
 fi
 
+if [[ "$RUN_PIPELINE" == "true" ]]; then
+  create_pipeline_run_for_node_app
+else
+  log "skipping PipelineRun creation"
+fi
+
 log "setup complete"
+log "help: ./scripts/k8s/start-tekton.sh --help"
 log "optional sanity checks:"
 log "  kubectl -n $NAMESPACE get pipelines,tasks,pipelineruns,eventlisteners"
 log "  kubectl -n $NAMESPACE get secret docker-credentials"

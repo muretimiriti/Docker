@@ -29,6 +29,6 @@ spec:
   - name: repo-url
     value: https://github.com/muretimiriti/Docker.git
   - name: image-reference
-    value: muretimiriti/service:v2
+    value: host.docker.internal:5000/sample-node-app
   - name: run-sonarqube
     value: "false"
