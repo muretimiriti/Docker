@@ -32,6 +32,18 @@ spec:
       type: string
       default: "false"
       description: "Set to true to run integration tests"
+    - name: argocd-auto-deploy
+      type: string
+      default: "true"
+      description: "Set to true to update and sync ArgoCD app immediately after build"
+    - name: argocd-namespace
+      type: string
+      default: "argocd"
+      description: "Namespace containing the ArgoCD Application"
+    - name: argocd-app-name
+      type: string
+      default: "tech-stack"
+      description: "ArgoCD Application name to patch with latest image"
 
   workspaces:
     - name: shared-data
@@ -342,6 +354,52 @@ spec:
           workspace: shared-data        # ← shared-data ONLY
         - name: dockerconfig
           workspace: docker-credentials # ← Secret, not PVC
+
+    - name: sync-argocd-image
+      runAfter:
+        - build-push
+      when:
+        - input: "$(params.argocd-auto-deploy)"
+          operator: in
+          values: ["true"]
+      taskSpec:
+        params:
+          - name: argocd-namespace
+            type: string
+          - name: argocd-app-name
+            type: string
+          - name: image-base
+            type: string
+          - name: image-url
+            type: string
+        steps:
+          - name: patch-app-image
+            image: bitnami/kubectl:1.32.4
+            script: |
+              #!/usr/bin/env sh
+              set -eu
+
+              app_ns="$(params.argocd-namespace)"
+              app_name="$(params.argocd-app-name)"
+              image_base="$(params.image-base)"
+              image_url="$(params.image-url)"
+
+              echo "Patching Application ${app_name} in namespace ${app_ns} with image ${image_url}"
+              kubectl -n "${app_ns}" patch application "${app_name}" --type merge \
+                -p "{\"spec\":{\"source\":{\"kustomize\":{\"images\":[\"${image_base}=${image_url}\"]}}}}"
+
+              kubectl -n "${app_ns}" annotate application "${app_name}" argocd.argoproj.io/refresh=hard --overwrite
+              kubectl -n "${app_ns}" patch application "${app_name}" --type merge \
+                -p '{"operation":{"sync":{"prune":true,"syncOptions":["CreateNamespace=true"]}}}'
+      params:
+        - name: argocd-namespace
+          value: "$(params.argocd-namespace)"
+        - name: argocd-app-name
+          value: "$(params.argocd-app-name)"
+        - name: image-base
+          value: "$(params.image-reference)"
+        - name: image-url
+          value: "$(tasks.build-push.results.IMAGE_URL)"
 
   finally:
     - name: notify-summary

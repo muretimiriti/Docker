@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "test": "node --test tests/**/*.test.js",
+    "test": "find tests -type f -name '*.test.js' ! -name '*.integration.test.js' -print0 | xargs -0 node --test",
     "test:integration": "node --test tests/**/*.integration.test.js",
     "start": "node server.js",
     "dev": "nodemon server.js",

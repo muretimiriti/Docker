@@ -17,6 +17,7 @@ VAULT_TOKEN_SECRET_KEY="${VAULT_TOKEN_SECRET_KEY:-token}"
 COSIGN_PUBLIC_KEY_FILE="${COSIGN_PUBLIC_KEY_FILE:-}"
 ESO_HELM_RELEASE="${ESO_HELM_RELEASE:-external-secrets}"
 KYVERNO_HELM_RELEASE="${KYVERNO_HELM_RELEASE:-kyverno}"
+KYVERNO_IMAGE_REGISTRY="${KYVERNO_IMAGE_REGISTRY:-ghcr.io}"
 
 usage() {
   cat <<'USAGE'
@@ -36,6 +37,7 @@ Options:
   --vault-token-secret <name>  Secret name for Vault token
   --vault-token-key <key>      Secret key holding Vault token
   --cosign-public-key-file <f> File path for cosign public key; creates kyverno/cosign-public-key
+  --kyverno-image-registry <r> Kyverno image registry (default: ghcr.io)
   -h, --help                   Show help
 
 Environment:
@@ -48,6 +50,7 @@ Environment:
   COSIGN_PUBLIC_KEY_FILE
   ESO_HELM_RELEASE
   KYVERNO_HELM_RELEASE
+  KYVERNO_IMAGE_REGISTRY
 USAGE
 }
 
@@ -107,6 +110,11 @@ while [[ $# -gt 0 ]]; do
       COSIGN_PUBLIC_KEY_FILE="$2"
       shift 2
       ;;
+    --kyverno-image-registry)
+      [[ $# -ge 2 ]] || die "Missing value for --kyverno-image-registry"
+      KYVERNO_IMAGE_REGISTRY="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -133,12 +141,13 @@ fi
 
 if [[ "$INSTALL_KYVERNO" == "true" ]]; then
   command -v helm >/dev/null 2>&1 || die "helm not found (required to install Kyverno)"
-  log "installing Kyverno via Helm"
+  log "installing Kyverno via Helm (image registry=$KYVERNO_IMAGE_REGISTRY)"
   helm repo add kyverno https://kyverno.github.io/kyverno/ >/dev/null 2>&1 || true
   helm repo update kyverno >/dev/null 2>&1 || true
   helm upgrade --install "$KYVERNO_HELM_RELEASE" kyverno/kyverno \
     --namespace kyverno \
-    --create-namespace >/dev/null
+    --create-namespace \
+    --set global.image.registry="$KYVERNO_IMAGE_REGISTRY" >/dev/null
 fi
 
 if [[ -n "$COSIGN_PUBLIC_KEY_FILE" ]]; then

@@ -14,6 +14,12 @@ spec:
       default: "false"
     - name: run-integration-tests
       default: "false"
+    - name: argocd-auto-deploy
+      default: "true"
+    - name: argocd-namespace
+      default: "argocd"
+    - name: argocd-app-name
+      default: "tech-stack"
   
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
@@ -41,6 +47,12 @@ spec:
             value: $(tt.params.integration-tests-strict)
           - name: run-integration-tests
             value: $(tt.params.run-integration-tests)
+          - name: argocd-auto-deploy
+            value: $(tt.params.argocd-auto-deploy)
+          - name: argocd-namespace
+            value: $(tt.params.argocd-namespace)
+          - name: argocd-app-name
+            value: $(tt.params.argocd-app-name)
         workspaces:
           - name: shared-data
             volumeClaimTemplate:

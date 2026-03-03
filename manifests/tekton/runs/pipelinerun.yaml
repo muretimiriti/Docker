@@ -42,3 +42,9 @@ spec:
     value: "false"
   - name: run-integration-tests
     value: "false"
+  - name: argocd-auto-deploy
+    value: "true"
+  - name: argocd-namespace
+    value: "argocd"
+  - name: argocd-app-name
+    value: "tech-stack"

@@ -47,10 +47,12 @@ die() {
 apply_crds_from_url() {
   local url="$1"
   local label="$2"
+  local apply_mode="${3:-server}"
 
   log "applying CRDs from $label"
   # Extract only YAML docs with kind: CustomResourceDefinition from a multi-doc manifest.
-  curl -fsSL "$url" \
+  local crd_stream
+  crd_stream="$(curl -fsSL "$url" \
     | awk '
       BEGIN { doc = ""; is_crd = 0 }
       /^---[[:space:]]*$/ {
@@ -72,8 +74,13 @@ apply_crds_from_url() {
           printf "%s", doc
         }
       }
-    ' \
-    | kubectl apply --server-side -f -
+    ')"
+
+  if [[ "$apply_mode" == "client" ]]; then
+    printf '%s' "$crd_stream" | kubectl apply -f -
+  else
+    printf '%s' "$crd_stream" | kubectl apply --server-side -f -
+  fi
 }
 
 wait_for_tekton_crds() {
@@ -180,8 +187,9 @@ else
 fi
 
 if [[ "$INSTALL_SECURITY_CRDS" == "true" ]]; then
-  apply_crds_from_url "$EXTERNAL_SECRETS_CRDS_URL" "External Secrets CRD bundle"
-  apply_crds_from_url "$KYVERNO_INSTALL_URL" "Kyverno install manifest"
+  # These CRDs are commonly Helm-managed; use client-side apply to avoid SSA field-manager conflicts.
+  apply_crds_from_url "$EXTERNAL_SECRETS_CRDS_URL" "External Secrets CRD bundle" "client"
+  apply_crds_from_url "$KYVERNO_INSTALL_URL" "Kyverno install manifest" "client"
   wait_for_security_crds
 else
   log "skipping security CRDs"
