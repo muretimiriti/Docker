@@ -5,7 +5,7 @@ This document shows how to apply the Tekton manifests in this repo, what secrets
 ## What You Get
 
 - A Tekton Pipeline that:
-  - clones the repo
+  - clones the repo.
   - runs `npm test`
   - runs Trivy SCA scan on the source tree
   - optionally runs SonarQube scan (gated by param)

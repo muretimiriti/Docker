@@ -1,3 +1,4 @@
+
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
@@ -6,7 +7,12 @@ spec:
   params:
     - name: repo-url
       value: $(body.repository.clone_url)
+<<<<<<< HEAD
     
+=======
+    - name: image-reference
+      value: muretimiriti/test1  # ← NO TAG! Just base name
+>>>>>>> 196bd0142f4597d624cebade59a16e2c7280a3a2
     - name: run-sonarqube
       value: "false"
     

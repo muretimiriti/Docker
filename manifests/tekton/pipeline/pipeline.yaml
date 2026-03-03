@@ -312,22 +312,4 @@ spec:
 
 
 
-    # NEW: Update Git manifest with new image tag
-    - name: update-git-manifest
-      runAfter: [build-push]
-      taskRef:
-        name: git-update-deployment
-      params:
-        - name: IMAGE_TAG
-          value: $(tasks.generate-tag.results.IMAGE_TAG)
-        - name: IMAGE_NAME
-          value: $(params.image-reference)
-        - name: GIT_USER_NAME
-          value: "Tekton Pipeline"
-        - name: GIT_USER_EMAIL
-          value: "tekton-pipeline@example.com"
-        - name: MANIFEST_PATH
-          value: k8s/deployment.yaml
-      workspaces:
-        - name: source
-          workspace: shared-data
+    
