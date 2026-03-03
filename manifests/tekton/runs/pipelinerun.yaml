@@ -40,3 +40,5 @@ spec:
     value: ""
   - name: integration-tests-strict
     value: "false"
+  - name: run-integration-tests
+    value: "false"

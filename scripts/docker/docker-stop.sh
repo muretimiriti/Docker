@@ -1,6 +1,20 @@
 #!/bin/bash
 set -e
 
+usage() {
+  cat <<'USAGE'
+Usage: ./scripts/docker/docker-stop.sh
+
+Stops docker compose services.
+Prefers `docker compose` and falls back to `docker-compose`.
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
 echo "[stop] starting..."
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -29,4 +43,3 @@ fi
 echo "[stop] bringing down docker compose services..."
 echo "[stop] command: ${COMPOSE[*]} down"
 exec "${COMPOSE[@]}" down
-

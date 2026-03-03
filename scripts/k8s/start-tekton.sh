@@ -34,6 +34,7 @@ Environment:
   TEKTON_IMAGE_REFERENCE Base image name for pipeline param image-reference (default: derived from node app deployment image)
   RUN_SONARQUBE          true/false to set pipeline param run-sonarqube (default: false)
   INTEGRATION_TESTS_STRICT true/false to fail when integration tests are missing (default: false)
+  RUN_INTEGRATION_TESTS  true/false to run integration tests stage (default: false)
   NOTIFICATION_WEBHOOK_URL Optional webhook URL passed to PipelineRun notifications
   DOCKER_CONFIG_JSON     Path to docker config.json (default: $DOCKER_CONFIG/config.json or $HOME/.docker/config.json)
   SONAR_HOST_URL         If set with SONAR_TOKEN, creates sonarqube-credentials secret
@@ -291,18 +292,20 @@ extract_node_image_reference_base() {
 }
 
 create_pipeline_run_for_node_app() {
-  local repo_url image_reference run_sonarqube integration_tests_strict notification_webhook_url created_run_name
+  local repo_url image_reference run_sonarqube integration_tests_strict run_integration_tests notification_webhook_url created_run_name
 
   repo_url="${TEKTON_REPO_URL:-$(infer_repo_url)}"
   image_reference="${TEKTON_IMAGE_REFERENCE:-$(extract_node_image_reference_base)}"
   run_sonarqube="${RUN_SONARQUBE:-false}"
   integration_tests_strict="${INTEGRATION_TESTS_STRICT:-false}"
+  run_integration_tests="${RUN_INTEGRATION_TESTS:-false}"
   notification_webhook_url="${NOTIFICATION_WEBHOOK_URL:-}"
 
   [[ -n "$repo_url" ]] || die "Unable to resolve repo URL; set TEKTON_REPO_URL"
   [[ -n "$image_reference" ]] || die "Unable to resolve image reference base; set TEKTON_IMAGE_REFERENCE"
   [[ "$run_sonarqube" == "true" || "$run_sonarqube" == "false" ]] || die "RUN_SONARQUBE must be true or false"
   [[ "$integration_tests_strict" == "true" || "$integration_tests_strict" == "false" ]] || die "INTEGRATION_TESTS_STRICT must be true or false"
+  [[ "$run_integration_tests" == "true" || "$run_integration_tests" == "false" ]] || die "RUN_INTEGRATION_TESTS must be true or false"
 
   if [[ "$image_reference" == host.docker.internal:5000/* ]]; then
     if command -v curl >/dev/null 2>&1; then
@@ -312,7 +315,7 @@ create_pipeline_run_for_node_app() {
     fi
   fi
 
-  log "creating PipelineRun for Node.js app (repo-url=$repo_url, image-reference=$image_reference, run-sonarqube=$run_sonarqube, integration-tests-strict=$integration_tests_strict)"
+  log "creating PipelineRun for Node.js app (repo-url=$repo_url, image-reference=$image_reference, run-sonarqube=$run_sonarqube, run-integration-tests=$run_integration_tests, integration-tests-strict=$integration_tests_strict)"
   cat <<EOF | k create -f -
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
@@ -357,6 +360,8 @@ spec:
       value: "$notification_webhook_url"
     - name: integration-tests-strict
       value: "$integration_tests_strict"
+    - name: run-integration-tests
+      value: "$run_integration_tests"
 EOF
 
   created_run_name="$(k get pipelineruns --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | tail -n 1)"

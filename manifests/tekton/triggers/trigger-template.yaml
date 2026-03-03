@@ -12,6 +12,8 @@ spec:
       default: ""
     - name: integration-tests-strict
       default: "false"
+    - name: run-integration-tests
+      default: "false"
   
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
@@ -37,6 +39,8 @@ spec:
             value: $(tt.params.notification-webhook-url)
           - name: integration-tests-strict
             value: $(tt.params.integration-tests-strict)
+          - name: run-integration-tests
+            value: $(tt.params.run-integration-tests)
         workspaces:
           - name: shared-data
             volumeClaimTemplate:

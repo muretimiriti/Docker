@@ -15,6 +15,8 @@ VAULT_TOKEN_SECRET_NAMESPACE="${VAULT_TOKEN_SECRET_NAMESPACE:-external-secrets}"
 VAULT_TOKEN_SECRET_NAME="${VAULT_TOKEN_SECRET_NAME:-vault-token}"
 VAULT_TOKEN_SECRET_KEY="${VAULT_TOKEN_SECRET_KEY:-token}"
 COSIGN_PUBLIC_KEY_FILE="${COSIGN_PUBLIC_KEY_FILE:-}"
+ESO_HELM_RELEASE="${ESO_HELM_RELEASE:-external-secrets}"
+KYVERNO_HELM_RELEASE="${KYVERNO_HELM_RELEASE:-kyverno}"
 
 usage() {
   cat <<'USAGE'
@@ -44,6 +46,8 @@ Environment:
   VAULT_TOKEN_SECRET_NAME
   VAULT_TOKEN_SECRET_KEY
   COSIGN_PUBLIC_KEY_FILE
+  ESO_HELM_RELEASE
+  KYVERNO_HELM_RELEASE
 USAGE
 }
 
@@ -117,13 +121,24 @@ command -v kubectl >/dev/null 2>&1 || die "kubectl not found"
 kubectl cluster-info >/dev/null 2>&1 || die "Cannot reach Kubernetes cluster"
 
 if [[ "$INSTALL_ESO" == "true" ]]; then
-  log "installing External Secrets Operator CRDs and controllers"
-  kubectl apply -f "https://raw.githubusercontent.com/external-secrets/external-secrets/main/deploy/bundle.yaml"
+  command -v helm >/dev/null 2>&1 || die "helm not found (required to install External Secrets Operator)"
+  log "installing External Secrets Operator via Helm"
+  helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&1 || true
+  helm repo update external-secrets >/dev/null 2>&1 || true
+  helm upgrade --install "$ESO_HELM_RELEASE" external-secrets/external-secrets \
+    --namespace external-secrets \
+    --create-namespace \
+    --set installCRDs=true >/dev/null
 fi
 
 if [[ "$INSTALL_KYVERNO" == "true" ]]; then
-  log "installing Kyverno"
-  kubectl apply -f "https://raw.githubusercontent.com/kyverno/kyverno/main/config/release/install.yaml"
+  command -v helm >/dev/null 2>&1 || die "helm not found (required to install Kyverno)"
+  log "installing Kyverno via Helm"
+  helm repo add kyverno https://kyverno.github.io/kyverno/ >/dev/null 2>&1 || true
+  helm repo update kyverno >/dev/null 2>&1 || true
+  helm upgrade --install "$KYVERNO_HELM_RELEASE" kyverno/kyverno \
+    --namespace kyverno \
+    --create-namespace >/dev/null
 fi
 
 if [[ -n "$COSIGN_PUBLIC_KEY_FILE" ]]; then

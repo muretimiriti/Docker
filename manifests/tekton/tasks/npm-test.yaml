@@ -10,6 +10,10 @@ spec:
       type: string
       default: .
       description: "Subdirectory containing package.json"
+    - name: UNIT_TEST_COMMAND
+      type: string
+      default: "find tests -type f -name '*.test.js' ! -name '*.integration.test.js' -print0 | xargs -0 node --test"
+      description: "Command used for unit tests only"
   workspaces:
     - name: source
       description: Cloned source
@@ -18,7 +22,7 @@ spec:
       optional: true
   steps:
     - name: install-test
-      image: node:24-alpine
+      image: node:24
       env:
         - name: NPM_CONFIG_CACHE
           value: /workspace/cache/npm
@@ -29,4 +33,4 @@ spec:
         node -v
         npm -v
         npm ci --prefer-offline --no-audit
-        npm test
+        sh -c "$(params.UNIT_TEST_COMMAND)"

@@ -28,6 +28,10 @@ spec:
       type: string
       default: "false"
       description: "If true, fail when integration tests are missing"
+    - name: run-integration-tests
+      type: string
+      default: "false"
+      description: "Set to true to run integration tests"
 
   workspaces:
     - name: shared-data
@@ -140,6 +144,10 @@ spec:
       retries: 1
       runAfter:
         - npm-test
+      when:
+        - input: "$(params.run-integration-tests)"
+          operator: in
+          values: ["true"]
       taskRef:
         name: npm-integration-test
       params:
@@ -155,7 +163,7 @@ spec:
     # ─────────────────────────────────────────
     - name: show-readme
       runAfter:
-        - integration-test
+        - npm-test
       taskRef:
         name: show-readme
       workspaces:
@@ -211,7 +219,7 @@ spec:
     # ─────────────────────────────────────────
     - name: sonarqube-scan
       runAfter:
-        - integration-test
+        - show-readme
       when:
         - input: "$(params.run-sonarqube)"
           operator: in

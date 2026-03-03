@@ -3,27 +3,35 @@ set -euo pipefail
 
 INSTALL_TEKTON_CRDS="true"
 INSTALL_ARGOCD_CRDS="true"
+INSTALL_SECURITY_CRDS="true"
+CHECK_DEPENDENCIES="true"
 
 TEKTON_PIPELINES_RELEASE_URL="${TEKTON_PIPELINES_RELEASE_URL:-https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml}"
 TEKTON_TRIGGERS_RELEASE_URL="${TEKTON_TRIGGERS_RELEASE_URL:-https://storage.googleapis.com/tekton-releases/triggers/latest/release.yaml}"
 ARGOCD_INSTALL_URL="${ARGOCD_INSTALL_URL:-https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml}"
+EXTERNAL_SECRETS_CRDS_URL="${EXTERNAL_SECRETS_CRDS_URL:-https://raw.githubusercontent.com/external-secrets/external-secrets/main/deploy/crds/bundle.yaml}"
+KYVERNO_INSTALL_URL="${KYVERNO_INSTALL_URL:-https://github.com/kyverno/kyverno/releases/latest/download/install.yaml}"
 
 usage() {
   cat <<'USAGE'
 Usage: ./scripts/prerequisites.sh [options]
 
-Installs prerequisite CRDs for Tekton and ArgoCD.
+Installs prerequisite CRDs for Tekton, ArgoCD, and security operators.
 Only CRDs are applied; controller/webhook/dashboard deployments are not installed by this script.
 
 Options:
   --skip-tekton       Do not install Tekton CRDs
   --skip-argocd       Do not install ArgoCD CRDs
+  --skip-security     Do not install External Secrets/Kyverno CRDs
+  --skip-deps-check   Skip local tool dependency checks
   -h, --help          Show this help message
 
 Environment overrides:
   TEKTON_PIPELINES_RELEASE_URL
   TEKTON_TRIGGERS_RELEASE_URL
   ARGOCD_INSTALL_URL
+  EXTERNAL_SECRETS_CRDS_URL
+  KYVERNO_INSTALL_URL
 USAGE
 }
 
@@ -85,6 +93,27 @@ wait_for_argocd_crds() {
   kubectl wait --for=condition=Established --timeout=240s crd/applicationsets.argoproj.io
 }
 
+wait_for_security_crds() {
+  log "waiting for security CRDs"
+  kubectl wait --for=condition=Established --timeout=240s crd/externalsecrets.external-secrets.io
+  kubectl wait --for=condition=Established --timeout=240s crd/clustersecretstores.external-secrets.io
+  kubectl wait --for=condition=Established --timeout=240s crd/clusterpolicies.kyverno.io
+}
+
+check_dependencies() {
+  local missing=0
+  for cmd in kubectl curl git helm; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      log "missing required command: $cmd"
+      missing=1
+    fi
+  done
+
+  if [[ "$missing" -ne 0 ]]; then
+    die "dependency check failed (install missing commands above)"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-tekton)
@@ -93,6 +122,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-argocd)
       INSTALL_ARGOCD_CRDS="false"
+      shift
+      ;;
+    --skip-security)
+      INSTALL_SECURITY_CRDS="false"
+      shift
+      ;;
+    --skip-deps-check)
+      CHECK_DEPENDENCIES="false"
       shift
       ;;
     -h|--help)
@@ -105,8 +142,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$INSTALL_TEKTON_CRDS" == "false" && "$INSTALL_ARGOCD_CRDS" == "false" ]]; then
-  die "Nothing to do; both Tekton and ArgoCD were skipped"
+if [[ "$INSTALL_TEKTON_CRDS" == "false" && "$INSTALL_ARGOCD_CRDS" == "false" && "$INSTALL_SECURITY_CRDS" == "false" ]]; then
+  die "Nothing to do; all CRD groups were skipped"
+fi
+
+if [[ "$CHECK_DEPENDENCIES" == "true" ]]; then
+  check_dependencies
 fi
 
 if ! command -v kubectl >/dev/null 2>&1; then
@@ -121,7 +162,7 @@ if ! kubectl cluster-info >/dev/null 2>&1; then
   die "Cannot reach Kubernetes cluster; ensure your context is configured"
 fi
 
-log "starting (tekton_crds=$INSTALL_TEKTON_CRDS, argocd_crds=$INSTALL_ARGOCD_CRDS)"
+log "starting (tekton_crds=$INSTALL_TEKTON_CRDS, argocd_crds=$INSTALL_ARGOCD_CRDS, security_crds=$INSTALL_SECURITY_CRDS)"
 
 if [[ "$INSTALL_TEKTON_CRDS" == "true" ]]; then
   apply_crds_from_url "$TEKTON_PIPELINES_RELEASE_URL" "Tekton Pipelines release"
@@ -136,6 +177,14 @@ if [[ "$INSTALL_ARGOCD_CRDS" == "true" ]]; then
   wait_for_argocd_crds
 else
   log "skipping ArgoCD CRDs"
+fi
+
+if [[ "$INSTALL_SECURITY_CRDS" == "true" ]]; then
+  apply_crds_from_url "$EXTERNAL_SECRETS_CRDS_URL" "External Secrets CRD bundle"
+  apply_crds_from_url "$KYVERNO_INSTALL_URL" "Kyverno install manifest"
+  wait_for_security_crds
+else
+  log "skipping security CRDs"
 fi
 
 log "prerequisite CRD setup complete"
