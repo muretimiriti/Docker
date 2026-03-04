@@ -1,5 +1,7 @@
 # Tech Stack Demo: Node.js + MongoDB + Tekton + ArgoCD + Observability
 
+Last updated: 2026-03-04
+
 This repository contains a sample Node.js app, MongoDB dependencies, and a full Kubernetes workflow:
 - build/test/push with Tekton
 - deploy/sync with ArgoCD
@@ -93,6 +95,11 @@ Important env vars:
 - `ARGOCD_NAMESPACE` (default `argocd`)
 - `ARGOCD_APP_NAME` (default `tech-stack`)
 - `COSIGN_SIGN_ENABLED=true|false` (default `true`; requires `secret/cosign-key`)
+  - local-cluster reliability:
+    - `AUTO_PRELOAD_LOCAL_IMAGE=true|false` (default `true`)
+    - `AUTO_RECOVER_PULL_ERRORS=true|false` (default `true`)
+    - `AUTO_PRELOAD_TIMEOUT_SECONDS` (default `1200`)
+    - `LOCAL_APP_DEPLOYMENT_NAME` (default `sample-node-app`)
 
 Notes:
 - Tekton now patches ArgoCD app image immediately after successful build (`sync-argocd-image` task).
@@ -116,6 +123,11 @@ Useful flags:
 
 ```bash
 ./scripts/k8s/start-observability.sh
+```
+
+Validate observability completeness anytime:
+```bash
+./scripts/k8s/observability-status.sh
 ```
 
 ### 5) Start security stack
@@ -220,6 +232,7 @@ If logs are empty in Grafana, check:
 - `promtail` pods running in `observability`
 - app pods exist and produce stdout logs
 - Loki datasource is healthy in Grafana
+- run `./scripts/k8s/observability-status.sh` for backend/API-level checks
 
 ## Security Lifecycle
 
@@ -253,6 +266,12 @@ Full cleanup including namespaces:
 Important:
 - Kubernetes Secrets are runtime copies created by External Secrets; do not treat Git manifests as secret storage.
 - For strict signed-image enforcement, provide a real cosign public key file to `start-security.sh`.
+
+Quick check commands:
+```bash
+kubectl -n default get secret docker-credentials sonarqube-credentials cosign-key
+kubectl -n external-secrets get secret vault-token vault-approle
+```
 
 ## Teardown / Cleanup
 
@@ -323,6 +342,9 @@ Fix:
 kubectl -n default rollout restart deployment/sample-node-app
 kubectl -n default rollout status deployment/sample-node-app
 ```
+
+Note:
+- `start-tekton.sh` now auto-preloads Tekton-built local tags and auto-recovers pull errors by default.
 
 ## Script Catalog
 

@@ -18,6 +18,12 @@ data:
         type: loki
         access: proxy
         url: http://loki.observability.svc.cluster.local:3100
+        jsonData:
+          derivedFields:
+            - name: trace_id
+              matcherRegex: '"trace_id":"([a-f0-9]+)"'
+              datasourceUid: tempo
+              url: '$${__value.raw}'
       - name: Tempo
         uid: tempo
         type: tempo
@@ -107,7 +113,20 @@ data:
               "refId": "A"
             }
           ],
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 }
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 }
+        },
+        {
+          "id": 5,
+          "title": "Traces Ingested (Tempo)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "targets": [
+            {
+              "expr": "sum(rate(tempo_distributor_spans_received_total[5m]))",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 }
         }
       ]
     }
@@ -191,6 +210,29 @@ data:
               summary: ArgoCD sync errors detected.
             labels:
               severity: critical
+  contact-points.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: default-webhook
+        receivers:
+          - uid: default-webhook
+            type: webhook
+            settings:
+              url: http://alert-webhook.default.svc.cluster.local:9000/alerts
+              httpMethod: POST
+              maxAlerts: 0
+  notification-policies.yaml: |
+    apiVersion: 1
+    policies:
+      - orgId: 1
+        receiver: default-webhook
+        group_by:
+          - grafana_folder
+          - alertname
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
           - uid: tekton-pipeline-failure
             title: Tekton Pipeline Failures
             condition: A

@@ -1,5 +1,7 @@
 # Manifests
 
+Last updated: 2026-03-04
+
 All Kubernetes and Tekton YAML lives under `manifests/`:
 
 - `manifests/apps/`: application workloads (sample-node-app)
@@ -18,6 +20,9 @@ All Kubernetes and Tekton YAML lives under `manifests/`:
   - `docker-credentials`
   - `sonarqube-credentials`
   - `cosign-key`
+- ESO auth bootstrap secrets are expected in `external-secrets` namespace:
+  - `vault-token` (token mode)
+  - `vault-approle` (approle mode)
 
 ## Apply Order (Typical)
 

@@ -9,6 +9,11 @@ INSTALL_TEKTON="true"
 APPLY_TRIGGERS="true"
 INSTALL_DASHBOARD="true"
 RUN_PIPELINE="${RUN_PIPELINE_ON_SETUP:-true}"
+AUTO_PRELOAD_LOCAL_IMAGE="${AUTO_PRELOAD_LOCAL_IMAGE:-true}"
+AUTO_RECOVER_PULL_ERRORS="${AUTO_RECOVER_PULL_ERRORS:-true}"
+AUTO_PRELOAD_TIMEOUT_SECONDS="${AUTO_PRELOAD_TIMEOUT_SECONDS:-1200}"
+LOCAL_APP_DEPLOYMENT_NAME="${LOCAL_APP_DEPLOYMENT_NAME:-sample-node-app}"
+LAST_PIPELINERUN_NAME=""
 
 usage() {
   cat <<'USAGE'
@@ -39,6 +44,10 @@ Environment:
   ARGOCD_NAMESPACE       ArgoCD namespace for auto deploy (default: argocd)
   ARGOCD_APP_NAME        ArgoCD application name for auto deploy (default: tech-stack)
   COSIGN_SIGN_ENABLED    true/false to sign built image before ArgoCD sync (default: true)
+  AUTO_PRELOAD_LOCAL_IMAGE true/false to auto-preload built local-registry image into cluster nodes (default: true)
+  AUTO_RECOVER_PULL_ERRORS true/false to auto-restart deployment on ImagePullBackOff after preload (default: true)
+  AUTO_PRELOAD_TIMEOUT_SECONDS Seconds to wait for build image URL before giving up preload (default: 1200)
+  LOCAL_APP_DEPLOYMENT_NAME Deployment name for pull-error auto-recovery (default: sample-node-app)
   NOTIFICATION_WEBHOOK_URL Optional webhook URL passed to PipelineRun notifications
   DOCKER_CONFIG_JSON     Path to docker config.json (default: $DOCKER_CONFIG/config.json or $HOME/.docker/config.json)
   SONAR_HOST_URL         If set with SONAR_TOKEN, creates sonarqube-credentials secret
@@ -276,6 +285,73 @@ infer_repo_url() {
   git -C "$ROOT_DIR" config --get remote.origin.url 2>/dev/null || true
 }
 
+is_local_registry_image() {
+  local image_ref="$1"
+  [[ "$image_ref" =~ ^(host\.docker\.internal|localhost):[0-9]+/ ]]
+}
+
+wait_for_image_url_result() {
+  local run_name="$1"
+  local timeout_seconds="$2"
+  local elapsed=0
+  local image_url=""
+  while (( elapsed < timeout_seconds )); do
+    image_url="$(kubectl -n "$NAMESPACE" get taskrun \
+      -l "tekton.dev/pipelineRun=${run_name},tekton.dev/pipelineTask=build-push" \
+      -o jsonpath='{.items[0].status.results[?(@.name=="IMAGE_URL")].value}' 2>/dev/null || true)"
+    if [[ -n "$image_url" ]]; then
+      printf '%s\n' "$image_url"
+      return 0
+    fi
+    sleep 5
+    elapsed=$((elapsed + 5))
+  done
+  return 1
+}
+
+auto_preload_local_registry_image() {
+  local run_name="$1"
+  local image_url=""
+
+  if [[ "$AUTO_PRELOAD_LOCAL_IMAGE" != "true" ]]; then
+    return 0
+  fi
+
+  if [[ ! -x "$ROOT_DIR/scripts/k8s/registry-preload.sh" ]]; then
+    log "auto preload skipped: scripts/k8s/registry-preload.sh not executable"
+    return 0
+  fi
+
+  image_url="$(wait_for_image_url_result "$run_name" "$AUTO_PRELOAD_TIMEOUT_SECONDS" || true)"
+  if [[ -z "$image_url" ]]; then
+    log "auto preload skipped: no IMAGE_URL result found within ${AUTO_PRELOAD_TIMEOUT_SECONDS}s"
+    return 0
+  fi
+
+  if ! is_local_registry_image "$image_url"; then
+    log "auto preload skipped: image '$image_url' is not a local registry image"
+    return 0
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    log "auto preload skipped: docker CLI not found"
+    return 0
+  fi
+
+  log "auto preloading built image into cluster nodes: $image_url"
+  "$ROOT_DIR/scripts/k8s/registry-preload.sh" --image "$image_url" || log "auto preload failed for $image_url"
+
+  if [[ "$AUTO_RECOVER_PULL_ERRORS" == "true" ]]; then
+    local has_pull_error="false"
+    has_pull_error="$(k get pods -l "app=${LOCAL_APP_DEPLOYMENT_NAME}" -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.state.waiting.reason}{" "}{end}{end}' 2>/dev/null | rg -q "ImagePullBackOff|ErrImagePull" && echo true || echo false)"
+    if [[ "$has_pull_error" == "true" ]]; then
+      log "detected pull errors on app=${LOCAL_APP_DEPLOYMENT_NAME}; restarting deployment/$LOCAL_APP_DEPLOYMENT_NAME"
+      k rollout restart "deployment/${LOCAL_APP_DEPLOYMENT_NAME}" >/dev/null 2>&1 || true
+      k rollout status "deployment/${LOCAL_APP_DEPLOYMENT_NAME}" --timeout=240s >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
 extract_node_image_reference_base() {
   local deployment_file image_no_digest image_ref
   deployment_file="$ROOT_DIR/manifests/apps/sample-node-app/deployment.yaml"
@@ -392,6 +468,7 @@ spec:
 EOF
 
   created_run_name="$(k get pipelineruns --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | tail -n 1)"
+  LAST_PIPELINERUN_NAME="$created_run_name"
   log "PipelineRun started: $created_run_name"
   log "follow logs: tkn -n $NAMESPACE pipelinerun logs -f $created_run_name"
 }
@@ -430,6 +507,9 @@ fi
 
 if [[ "$RUN_PIPELINE" == "true" ]]; then
   create_pipeline_run_for_node_app
+  if [[ -n "$LAST_PIPELINERUN_NAME" ]]; then
+    auto_preload_local_registry_image "$LAST_PIPELINERUN_NAME"
+  fi
 else
   log "skipping PipelineRun creation"
 fi
