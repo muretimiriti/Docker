@@ -20,6 +20,8 @@ spec:
       default: "argocd"
     - name: argocd-app-name
       default: "tech-stack"
+    - name: cosign-sign-enabled
+      default: "true"
   
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
@@ -53,6 +55,8 @@ spec:
             value: $(tt.params.argocd-namespace)
           - name: argocd-app-name
             value: $(tt.params.argocd-app-name)
+          - name: cosign-sign-enabled
+            value: $(tt.params.cosign-sign-enabled)
         workspaces:
           - name: shared-data
             volumeClaimTemplate:
@@ -67,3 +71,6 @@ spec:
           - name: cache
             persistentVolumeClaim:
               claimName: tekton-cache-pvc
+          - name: cosign-key
+            secret:
+              secretName: cosign-key

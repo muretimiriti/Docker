@@ -1,0 +1,62 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: cosign-sign
+spec:
+  description: Sign an image with Cosign key material from Kubernetes secret.
+  params:
+    - name: IMAGE_URL
+      type: string
+      description: Full image URL with tag
+    - name: COSIGN_KEY_PATH
+      type: string
+      default: cosign.key
+      description: Key filename in signing workspace
+    - name: COSIGN_PASSWORD_PATH
+      type: string
+      default: cosign.password
+      description: Password filename in signing workspace
+    - name: INSECURE_REGISTRY
+      type: string
+      default: "true"
+      description: Set true for local insecure registries
+  workspaces:
+    - name: signing
+      description: Workspace containing cosign.key and cosign.password
+    - name: dockerconfig
+      description: Workspace with docker config.json
+      optional: true
+  steps:
+    - name: sign-image
+      image: ghcr.io/sigstore/cosign/cosign:v2.4.1
+      env:
+        - name: COSIGN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cosign-key
+              key: cosign.password
+              optional: true
+        - name: COSIGN_INSECURE_REGISTRY
+          value: $(params.INSECURE_REGISTRY)
+        - name: DOCKER_CONFIG
+          value: /tekton/home/.docker
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        mkdir -p /tekton/home/.docker
+        if [ -f "$(workspaces.dockerconfig.path)/config.json" ]; then
+          cp "$(workspaces.dockerconfig.path)/config.json" /tekton/home/.docker/config.json
+        fi
+
+        if [ -z "${COSIGN_PASSWORD:-}" ] && [ -f "$(workspaces.signing.path)/$(params.COSIGN_PASSWORD_PATH)" ]; then
+          COSIGN_PASSWORD="$(cat "$(workspaces.signing.path)/$(params.COSIGN_PASSWORD_PATH)")"
+          export COSIGN_PASSWORD
+        fi
+
+        key_file="$(workspaces.signing.path)/$(params.COSIGN_KEY_PATH)"
+        [ -f "$key_file" ] || { echo "missing cosign key: $key_file" >&2; exit 2; }
+
+        image_url="$(params.IMAGE_URL)"
+        echo "Signing image: $image_url"
+        cosign sign --yes --key "$key_file" "$image_url"

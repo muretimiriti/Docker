@@ -44,6 +44,10 @@ spec:
       type: string
       default: "tech-stack"
       description: "ArgoCD Application name to patch with latest image"
+    - name: cosign-sign-enabled
+      type: string
+      default: "true"
+      description: "Set to true to sign built image with cosign before ArgoCD sync"
 
   workspaces:
     - name: shared-data
@@ -52,6 +56,8 @@ spec:
       description: Workspace for docker credentials
     - name: cache
       description: Persistent cache workspace (npm, trivy, sonar)
+    - name: cosign-key
+      description: Workspace containing cosign.key and cosign.password secret data
 
   tasks:
     # ─────────────────────────────────────────
@@ -355,9 +361,31 @@ spec:
         - name: dockerconfig
           workspace: docker-credentials # ← Secret, not PVC
 
+    - name: sign-image
+      retries: 1
+      runAfter:
+        - build-push
+      when:
+        - input: "$(params.cosign-sign-enabled)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: cosign-sign
+      params:
+        - name: IMAGE_URL
+          value: "$(tasks.build-push.results.IMAGE_URL)"
+        - name: INSECURE_REGISTRY
+          value: "true"
+      workspaces:
+        - name: signing
+          workspace: cosign-key
+        - name: dockerconfig
+          workspace: docker-credentials
+
     - name: sync-argocd-image
       runAfter:
         - build-push
+        - sign-image
       when:
         - input: "$(params.argocd-auto-deploy)"
           operator: in
@@ -374,7 +402,7 @@ spec:
             type: string
         steps:
           - name: patch-app-image
-            image: bitnami/kubectl:1.32.4
+            image: bitnami/kubectl:latest
             script: |
               #!/usr/bin/env sh
               set -eu

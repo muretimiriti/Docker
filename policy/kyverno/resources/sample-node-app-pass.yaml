@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-node-app-pass
+spec:
+  selector:
+    matchLabels:
+      app: sample-node-app
+  template:
+    metadata:
+      labels:
+        app: sample-node-app
+    spec:
+      containers:
+        - name: app
+          image: host.docker.internal:5000/sample-node-app:latest
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

@@ -38,6 +38,7 @@ Environment:
   ARGOCD_AUTO_DEPLOY     true/false to patch+sync ArgoCD app after build (default: true)
   ARGOCD_NAMESPACE       ArgoCD namespace for auto deploy (default: argocd)
   ARGOCD_APP_NAME        ArgoCD application name for auto deploy (default: tech-stack)
+  COSIGN_SIGN_ENABLED    true/false to sign built image before ArgoCD sync (default: true)
   NOTIFICATION_WEBHOOK_URL Optional webhook URL passed to PipelineRun notifications
   DOCKER_CONFIG_JSON     Path to docker config.json (default: $DOCKER_CONFIG/config.json or $HOME/.docker/config.json)
   SONAR_HOST_URL         If set with SONAR_TOKEN, creates sonarqube-credentials secret
@@ -295,7 +296,7 @@ extract_node_image_reference_base() {
 }
 
 create_pipeline_run_for_node_app() {
-  local repo_url image_reference run_sonarqube integration_tests_strict run_integration_tests argocd_auto_deploy argocd_namespace argocd_app_name notification_webhook_url created_run_name
+  local repo_url image_reference run_sonarqube integration_tests_strict run_integration_tests argocd_auto_deploy argocd_namespace argocd_app_name cosign_sign_enabled notification_webhook_url created_run_name
 
   repo_url="${TEKTON_REPO_URL:-$(infer_repo_url)}"
   image_reference="${TEKTON_IMAGE_REFERENCE:-$(extract_node_image_reference_base)}"
@@ -305,6 +306,7 @@ create_pipeline_run_for_node_app() {
   argocd_auto_deploy="${ARGOCD_AUTO_DEPLOY:-true}"
   argocd_namespace="${ARGOCD_NAMESPACE:-argocd}"
   argocd_app_name="${ARGOCD_APP_NAME:-tech-stack}"
+  cosign_sign_enabled="${COSIGN_SIGN_ENABLED:-true}"
   notification_webhook_url="${NOTIFICATION_WEBHOOK_URL:-}"
 
   [[ -n "$repo_url" ]] || die "Unable to resolve repo URL; set TEKTON_REPO_URL"
@@ -313,6 +315,7 @@ create_pipeline_run_for_node_app() {
   [[ "$integration_tests_strict" == "true" || "$integration_tests_strict" == "false" ]] || die "INTEGRATION_TESTS_STRICT must be true or false"
   [[ "$run_integration_tests" == "true" || "$run_integration_tests" == "false" ]] || die "RUN_INTEGRATION_TESTS must be true or false"
   [[ "$argocd_auto_deploy" == "true" || "$argocd_auto_deploy" == "false" ]] || die "ARGOCD_AUTO_DEPLOY must be true or false"
+  [[ "$cosign_sign_enabled" == "true" || "$cosign_sign_enabled" == "false" ]] || die "COSIGN_SIGN_ENABLED must be true or false"
 
   if [[ "$image_reference" == host.docker.internal:5000/* ]]; then
     if command -v curl >/dev/null 2>&1; then
@@ -322,7 +325,13 @@ create_pipeline_run_for_node_app() {
     fi
   fi
 
-  log "creating PipelineRun for Node.js app (repo-url=$repo_url, image-reference=$image_reference, run-sonarqube=$run_sonarqube, run-integration-tests=$run_integration_tests, integration-tests-strict=$integration_tests_strict, argocd-auto-deploy=$argocd_auto_deploy, argocd-app=$argocd_namespace/$argocd_app_name)"
+  if [[ "$cosign_sign_enabled" == "true" ]]; then
+    if ! k get secret cosign-key >/dev/null 2>&1; then
+      die "COSIGN_SIGN_ENABLED=true but secret/cosign-key is missing in namespace $NAMESPACE (run ./scripts/k8s/start-security.sh and wait for ExternalSecret sync, or set COSIGN_SIGN_ENABLED=false)"
+    fi
+  fi
+
+  log "creating PipelineRun for Node.js app (repo-url=$repo_url, image-reference=$image_reference, run-sonarqube=$run_sonarqube, run-integration-tests=$run_integration_tests, integration-tests-strict=$integration_tests_strict, argocd-auto-deploy=$argocd_auto_deploy, argocd-app=$argocd_namespace/$argocd_app_name, cosign-sign-enabled=$cosign_sign_enabled)"
   cat <<EOF | k create -f -
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
@@ -356,6 +365,9 @@ spec:
     - name: cache
       persistentVolumeClaim:
         claimName: tekton-cache-pvc
+    - name: cosign-key
+      secret:
+        secretName: cosign-key
   params:
     - name: repo-url
       value: $repo_url
@@ -375,6 +387,8 @@ spec:
       value: "$argocd_namespace"
     - name: argocd-app-name
       value: "$argocd_app_name"
+    - name: cosign-sign-enabled
+      value: "$cosign_sign_enabled"
 EOF
 
   created_run_name="$(k get pipelineruns --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | tail -n 1)"

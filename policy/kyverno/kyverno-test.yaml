@@ -1,0 +1,22 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: sample-node-app-policy-tests
+policies:
+  - policies/require-probes-and-resources.yaml
+resources:
+  - resources/sample-node-app-pass.yaml
+  - resources/sample-node-app-fail.yaml
+results:
+  - policy: require-probes-and-resources-for-sample-node-app
+    rule: check-probes-and-resources
+    resources:
+      - sample-node-app-pass
+    kind: Deployment
+    result: pass
+  - policy: require-probes-and-resources-for-sample-node-app
+    rule: check-probes-and-resources
+    resources:
+      - sample-node-app-fail
+    kind: Deployment
+    result: fail

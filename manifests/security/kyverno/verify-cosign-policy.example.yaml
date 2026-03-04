@@ -21,7 +21,7 @@ spec:
           attestors:
             - entries:
                 - keys:
-                    secretRef:
-                      name: cosign-public-key
-                      namespace: default
-                      key: cosign.pub
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      REPLACE_WITH_COSIGN_PUBLIC_KEY
+                      -----END PUBLIC KEY-----

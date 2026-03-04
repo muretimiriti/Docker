@@ -10,6 +10,15 @@ All Kubernetes and Tekton YAML lives under `manifests/`:
 - `manifests/environments/`: env promotion config (`dev`, `staging`, `prod`)
 - `manifests/security/`: External Secrets + Vault store + Kyverno cosign policy
 
+## Secrets Model
+
+- Git only stores secret *references* and policy manifests.
+- Vault (`kv/ci/*`) holds real secret values.
+- External Secrets Operator syncs runtime Kubernetes Secrets into `default`:
+  - `docker-credentials`
+  - `sonarqube-credentials`
+  - `cosign-key`
+
 ## Apply Order (Typical)
 
 Tekton prerequisites (namespaces/CRDs assumed installed already):

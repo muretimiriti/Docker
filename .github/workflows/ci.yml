@@ -35,3 +35,64 @@ jobs:
 
       - name: Audit (High/Critical)
         run: npm audit --audit-level=high --omit=dev
+
+  policy-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz" -o /tmp/kustomize.tar.gz
+          tar -xzf /tmp/kustomize.tar.gz -C /tmp
+          sudo mv /tmp/kustomize /usr/local/bin/kustomize
+          kustomize version
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz" -o /tmp/kubeconform.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
+          sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: Install conftest
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v0.58.0/conftest_0.58.0_Linux_x86_64.tar.gz" -o /tmp/conftest.tar.gz
+          tar -xzf /tmp/conftest.tar.gz -C /tmp
+          sudo mv /tmp/conftest /usr/local/bin/conftest
+          conftest --version
+
+      - name: Install kyverno CLI
+        run: |
+          set -euo pipefail
+          curl -sSL https://raw.githubusercontent.com/kyverno/kyverno/main/scripts/install-cli.sh | bash -s -- -b /usr/local/bin v1.15.2
+          kyverno version
+
+      - name: Build Kustomize overlays/manifests
+        run: |
+          set -euo pipefail
+          mkdir -p .out
+          kustomize build manifests/gitops/overlays/dev > .out/gitops-dev.yaml
+          kustomize build manifests/gitops/overlays/staging > .out/gitops-staging.yaml
+          kustomize build manifests/gitops/overlays/prod > .out/gitops-prod.yaml
+          kustomize build manifests/security > .out/security.yaml
+          kustomize build manifests/observability > .out/observability.yaml
+
+      - name: Validate manifests schema
+        run: |
+          set -euo pipefail
+          kubeconform -strict -summary -ignore-missing-schemas .out/*.yaml
+
+      - name: Run Conftest policy checks
+        run: |
+          set -euo pipefail
+          conftest test .out/*.yaml -p policy/conftest
+
+      - name: Run Kyverno policy tests
+        run: |
+          set -euo pipefail
+          kyverno test policy/kyverno

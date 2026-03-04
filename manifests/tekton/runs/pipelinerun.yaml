@@ -29,6 +29,9 @@ spec:
   - name: cache
     persistentVolumeClaim:
       claimName: tekton-cache-pvc
+  - name: cosign-key
+    secret:
+      secretName: cosign-key
   params:
   - name: repo-url
     value: https://github.com/muretimiriti/Docker.git
@@ -48,3 +51,5 @@ spec:
     value: "argocd"
   - name: argocd-app-name
     value: "tech-stack"
+  - name: cosign-sign-enabled
+    value: "true"

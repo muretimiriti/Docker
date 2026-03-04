@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-node-app-fail
+spec:
+  selector:
+    matchLabels:
+      app: sample-node-app
+  template:
+    metadata:
+      labels:
+        app: sample-node-app
+    spec:
+      containers:
+        - name: app
+          image: host.docker.internal:5000/sample-node-app:latest

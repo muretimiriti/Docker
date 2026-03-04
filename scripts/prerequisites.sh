@@ -78,6 +78,8 @@ apply_crds_from_url() {
 
   if [[ "$apply_mode" == "client" ]]; then
     printf '%s' "$crd_stream" | kubectl apply -f -
+  elif [[ "$apply_mode" == "server-force" ]]; then
+    printf '%s' "$crd_stream" | kubectl apply --server-side --force-conflicts -f -
   else
     printf '%s' "$crd_stream" | kubectl apply --server-side -f -
   fi
@@ -187,9 +189,10 @@ else
 fi
 
 if [[ "$INSTALL_SECURITY_CRDS" == "true" ]]; then
-  # These CRDs are commonly Helm-managed; use client-side apply to avoid SSA field-manager conflicts.
-  apply_crds_from_url "$EXTERNAL_SECRETS_CRDS_URL" "External Secrets CRD bundle" "client"
-  apply_crds_from_url "$KYVERNO_INSTALL_URL" "Kyverno install manifest" "client"
+  # Security CRDs are often Helm-managed; use SSA with force-conflicts to avoid both
+  # field-manager conflicts and oversized client-side last-applied annotations.
+  apply_crds_from_url "$EXTERNAL_SECRETS_CRDS_URL" "External Secrets CRD bundle" "server-force"
+  apply_crds_from_url "$KYVERNO_INSTALL_URL" "Kyverno install manifest" "server-force"
   wait_for_security_crds
 else
   log "skipping security CRDs"

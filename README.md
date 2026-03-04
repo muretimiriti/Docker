@@ -1,358 +1,363 @@
-# Tech Stack Demo: Node.js + MongoDB + Docker + Tekton
+# Tech Stack Demo: Node.js + MongoDB + Tekton + ArgoCD + Observability
 
-This repository contains a small Express app backed by MongoDB, plus Docker Compose for local development and Tekton manifests for CI-style pipelines (clone, test, scan, build/push).
+This repository contains a sample Node.js app, MongoDB dependencies, and a full Kubernetes workflow:
+- build/test/push with Tekton
+- deploy/sync with ArgoCD
+- metrics/logs/traces with Prometheus/Thanos, Loki, Tempo, Grafana
+- security controls with External Secrets + Kyverno + Cosign signing/verification
 
-## Tech Stack
+## What You Get
 
-Application:
+- Local app runtime with Docker Compose
+- Kubernetes manifests split by concern (`apps`, `platform`, `gitops`, `tekton`, `observability`, `security`)
+- Automated scripts for install/start/stop/promote/rollback
+- GitOps overlays for `dev`, `staging`, `prod`
 
-- Node.js (containerized)
-- Express (HTTP server)
-- Mongoose (MongoDB ODM)
-- HTML templates served as static files (simple string substitution)
+## Repository Layout
 
-Data:
-
-- MongoDB
-- mongo-express (optional UI)
-
-Local Dev / Packaging:
-
-- Docker + Docker Compose
-- `scripts/docker/docker-start.sh`, `scripts/docker/docker-stop.sh`, `scripts/tests/tests.sh`
-
-CI/CD:
-
-- Tekton Pipelines + Tekton Triggers (manifests in `manifests/tekton/`)
-- Trivy SCA scan task (in-repo)
-- Mongo integration-test gate before image build/push
-- SonarQube scan task (in-repo, optional via pipeline param)
-- ArgoCD deployment helper (`scripts/k8s/start-argo.sh`) with image auto-selection, smoke test, and optional auto-rollback
-- Observability stack (`manifests/observability/`): OTel, Prometheus+Thanos, Loki, Tempo, Grafana
-
-## Repo Layout
-
-- `app.js`: Express app factory (routes, HTML escaping, validation)
-- `server.js`: runtime entrypoint (Mongo connection + listen)
-- `logger.js`: JSON structured logging with OTel trace IDs
-- `models/`: Mongoose schemas
-- `views/`: HTML templates (`register.html`, `profile.html`)
-- `public/`: static assets (CSS)
-- `tests/`: Node-native tests (`node --test ...`)
-- `perf/`: lightweight perf check (`npm run perf`)
-- `manifests/`: Kubernetes and Tekton YAML (see `manifests/README.md`)
-- `manifests/environments/`: promotion config for `dev`, `staging`, `prod`
+- `app.js`, `server.js`, `logger.js`: app runtime and structured logging
+- `tests/`: unit + integration tests
 - `manifests/apps/`: app workloads (`sample-node-app`)
-- `manifests/platform/`: platform workloads (`mongo`, `mongo-express`)
-- `manifests/gitops/`: base + env overlays for ArgoCD
-- `scripts/`: helper scripts to run and stop the stack
+- `manifests/platform/`: shared platform workloads (`mongo`, `mongo-express`)
+- `manifests/gitops/`: base + overlays (`dev|staging|prod`)
+- `manifests/tekton/`: tasks, pipeline, triggers, RBAC, runs
+- `manifests/observability/`: OTel, Prometheus+Thanos, Loki, Tempo, Grafana
+- `manifests/security/`: External Secrets + Kyverno policy manifests
+- `scripts/`: lifecycle and utility scripts
+- `docs/`: walkthroughs and change logs
 
 ## Prerequisites
 
-Local development:
+Install these tools first:
+- `docker`
+- `kubectl`
+- `helm`
+- `git`
+- `curl`
+- optional: `jq`, `tkn`, `cosign`
 
-- Docker Desktop (or Docker Engine)
-- Docker Compose (either `docker compose` or legacy `docker-compose`)
+Cluster assumptions:
+- Working Kubernetes context (Docker Desktop Kubernetes or kind/minikube)
+- Network egress enabled for pulling container images/charts
 
-Optional (non-Docker local run):
+## Quick Local App (No Kubernetes)
 
-- Node.js + npm
-- A reachable MongoDB instance
+1. Create env file:
+```bash
+cp .env.example .env
+```
 
-## Quickstart (Recommended): Docker Compose
-
-1. Configure environment
-
-- Copy `.env.example` to `.env` and adjust values as needed.
-
-2. Start the stack
-
+2. Start app + mongodb + mongo-express:
 ```bash
 ./scripts/docker/docker-start.sh
 ```
 
-3. Open services
-
-- App: `http://localhost:3000`
-- Mongo Express: `http://localhost:8081`
-
-4. Stop the stack.
-
+3. Stop:
 ```bash
 ./scripts/docker/docker-stop.sh
 ```
 
-### Production-like Compose (Optional)
-
-The compose file includes a production-like profile that runs the app without bind-mounts:
-
-```bash
-docker compose --profile prod up --build
-```
-
-## Run Without Docker (Optional)
-
-Set `MONGO_URI` to a reachable MongoDB and run:
-
-```bash
-npm install
-npm start
-```
-
-## Tests And Checks
-
-Run unit/integration-style handler tests (no Mongo required):
-
-```bash
-npm test
-```
-
-Run Mongo integration tests:
-
-```bash
-npm run test:integration
-```
-
-Run the lightweight perf micro-benchmark:
-
-```bash
-npm run perf
-```
-
-Or run the project checks via script:
-
+4. Run tests:
 ```bash
 ./scripts/tests/tests.sh
 ```
 
-## Linting And Formatting
+## Full Kubernetes Setup (Recommended Order)
 
-Lint:
-
-```bash
-npm run lint
-```
-
-Format:
+### 1) Install CRD prerequisites
 
 ```bash
-npm run format
+./scripts/prerequisites.sh
 ```
 
-Format check:
+Flags:
+- `--skip-tekton`
+- `--skip-argocd`
+- `--skip-security`
+- `--skip-deps-check`
 
-```bash
-npm run format:check
-```
-
-## Environment Variables
-
-Primary variables:
-
-- `PORT`: app port (default `3000`)
-- `MONGO_URI`: Mongo connection string (required)
-
-Optional update auth (recommended if you expose this publicly):
-
-- `UPDATE_BASIC_AUTH_USER`
-- `UPDATE_BASIC_AUTH_PASS`
-
-Mongo init variables (used by the Mongo container in Compose):
-
-- `MONGO_INITDB_ROOT_USERNAME`
-- `MONGO_INITDB_ROOT_PASSWORD`
-- `MONGO_INITDB_DATABASE`
-
-mongo-express variables:
-
-- `MONGO_EXPRESS_PORT` (default `8081`)
-- `ME_CONFIG_MONGODB_URL` (defaults to a URL built from the Mongo init vars)
-- `ME_CONFIG_BASICAUTH` (defaults to `false`)
-
-See `.env.example` for the full list and defaults.
-
-## Tekton / Kubernetes Manifests
-
-All Kubernetes and Tekton YAML files are organized under `manifests/`.
-
-- Apply order and notes: `manifests/README.md`
-- Tekton pipeline: `manifests/tekton/pipeline/pipeline.yaml`
-- Tekton triggers: `manifests/tekton/triggers/`
-- Tekton tasks (in-repo): `manifests/tekton/tasks/`
-- Walkthrough: `docs/tekton-walkthrough.md`
-
-### Automated Tekton Setup
-
-Use the setup script to install Tekton (pipelines/triggers/dashboard), create required secrets, and apply all Tekton manifests:
+### 2) Start Tekton
 
 ```bash
 ./scripts/k8s/start-tekton.sh
 ```
 
-Required for registry push:
+Important env vars:
+- `TEKTON_NAMESPACE` (default `default`)
+- `TEKTON_REPO_URL` (defaults to git origin)
+- `TEKTON_IMAGE_REFERENCE` (default derived from app manifest)
+- `RUN_SONARQUBE=true|false`
+- `RUN_INTEGRATION_TESTS=true|false` (default `false`)
+- `INTEGRATION_TESTS_STRICT=true|false` (default `false`)
+- `ARGOCD_AUTO_DEPLOY=true|false` (default `true`)
+- `ARGOCD_NAMESPACE` (default `argocd`)
+- `ARGOCD_APP_NAME` (default `tech-stack`)
+- `COSIGN_SIGN_ENABLED=true|false` (default `true`; requires `secret/cosign-key`)
 
-- A valid Docker login config at `$HOME/.docker/config.json` (or set `DOCKER_CONFIG_JSON` to another path).
-- Default local registry flow uses `host.docker.internal:5000/sample-node-app`.
-- Use `./scripts/k8s/registry-preload.sh --image host.docker.internal:5000/sample-node-app:<tag>` for Docker Desktop/kind preload.
+Notes:
+- Tekton now patches ArgoCD app image immediately after successful build (`sync-argocd-image` task).
+- Tekton signs the pushed image (`cosign-sign`) before ArgoCD sync when `COSIGN_SIGN_ENABLED=true`.
+- Default path is optimized for speed: integration tests are off unless enabled.
 
-Optional inputs:
+### 3) Start ArgoCD app flow
 
-- `SONAR_HOST_URL` + `SONAR_TOKEN` to create `sonarqube-credentials`
-- `SSH_PRIVATE_KEY_PATH` + `SSH_KNOWN_HOSTS_PATH` to create `ssh-key` (for private SSH git clones)
-- `TEKTON_NAMESPACE` to target a non-default namespace
+```bash
+./scripts/k8s/start-argo.sh --revision main --env dev
+```
 
 Useful flags:
+- `--install-argocd`
+- `--no-wait`
+- `--notify-webhook-url <url>`
+- `--rollback-mode kubernetes|gitops`
+- `--skip-path-preflight` (not recommended)
 
-- `--skip-install`: skip Tekton Pipelines/Triggers/Dashboard install (if already installed)
-- `--skip-dashboard`: skip Tekton Dashboard UI install
-- `--skip-triggers`: skip trigger manifests
-- `--namespace <name>`: override namespace for this run
-
-Tekton Dashboard UI (if installed):
-
-```bash
-kubectl -n tekton-pipelines port-forward svc/tekton-dashboard 9097:9097
-```
-
-Then open `http://localhost:9097`.
-
-### SonarQube (Optional)
-
-The SonarQube scan task is gated behind the pipeline param `run-sonarqube=true`.
-
-It expects a secret named `sonarqube-credentials` with:
-
-- `SONAR_HOST_URL`
-- `SONAR_TOKEN`
-
-If the secret is missing, the task will skip (so the pipeline still runs).
-
-### ArgoCD Deploy (Image Pick + Cluster Deploy)
-
-Use the ArgoCD script to select an image and deploy using a GitOps `Application`:
-
-```bash
-./scripts/k8s/start-argo.sh --repo-url <your-repo-url>
-```
-
-Environment deploy (promotion-aware):
-
-```bash
-./scripts/k8s/start-argo.sh --env dev
-./scripts/k8s/start-argo.sh --env staging
-./scripts/k8s/start-argo.sh --env prod
-```
-
-Image selection priority:
-
-- `--image <ref>`
-- `IMAGE_REFERENCE` env var
-- latest successful Tekton `build-push` TaskRun result `IMAGE_URL` (tagged image)
-- fallback to latest successful Tekton `PipelineRun` param `image-reference`
-- fallback to `manifests/apps/sample-node-app/deployment.yaml` image
-
-Useful flags:
-
-- `--install-argocd`: installs ArgoCD in `argocd` namespace before applying the app
-- `--dest-namespace <name>`: target namespace for workloads
-- `--revision <branch|tag|sha>`: Git revision for ArgoCD source
-- `--no-wait`: skip rollout wait
-- `--notify-webhook-url <url>`: send deploy success/failure notifications
-- `--env <dev|staging|prod>`: deploy from `manifests/gitops/overlays/<env>` and load defaults from `manifests/environments/<env>.env`
-- `--smoke-path <path>`: post-deploy smoke check path (default `/healthz`)
-- `--skip-smoke`: disable post-deploy smoke check
-- `--no-auto-rollback`: disable rollback when rollout/smoke fails
-- `--rollback-mode gitops`: disables `rollout undo` and expects GitOps rollback flow
-- `--skip-path-preflight`: bypass remote revision/path check (not recommended)
-
-Default ArgoCD app path is `manifests/gitops/overlays/dev`.
-
-Promotion command:
-
-```bash
-./scripts/k8s/promote.sh --from dev --to staging
-./scripts/k8s/promote.sh --from staging --to prod
-```
-
-Guarded promotion (checks + approval + pushed branch verification):
-
-```bash
-./scripts/k8s/promote.sh --from dev --to staging --verify-push --approved
-./scripts/k8s/promote.sh --from staging --to prod --verify-push --approved
-```
-
-GitOps-native rollback:
-
-```bash
-./scripts/k8s/gitops-rollback.sh --env dev --push
-```
-
-ArgoCD Web UI access:
-
-```bash
-kubectl -n argocd port-forward svc/argocd-server 8080:443
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode; echo
-```
-
-Then open `https://localhost:8080` and log in as `admin`.
-
-### Observability (OTel + Thanos + Loki + Grafana)
-
-Start the observability stack:
+### 4) Start observability stack
 
 ```bash
 ./scripts/k8s/start-observability.sh
 ```
 
-Then open Grafana:
+### 5) Start security stack
 
 ```bash
+./scripts/k8s/start-security.sh
+```
+
+Defaults:
+- Kyverno image registry defaults to `ghcr.io` for pull reliability.
+
+Useful flags:
+- `--audit-policy` (policy in audit mode)
+- `--vault-auth-mode token|approle|jwt` (default `approle`)
+- `--vault-addr`, `--vault-path`, `--vault-version`
+- `--vault-token-namespace`, `--vault-token-secret`, `--vault-token-key`
+- `--vault-approle-role-id`, `--vault-approle-secret`, `--vault-approle-secret-key`
+- `--vault-jwt-path`, `--vault-jwt-role`
+- `--cosign-public-key-file <path>`
+
+Vault bootstrap helpers:
+- `./scripts/k8s/vault-bootstrap-token.sh`
+- `./scripts/k8s/vault-bootstrap-approle.sh`
+- `./scripts/k8s/vault-bootstrap-jwt.sh`
+
+## Port Forwarding
+
+One script for all common endpoints:
+
+```bash
+./scripts/port-forwarding.sh all
+```
+
+Single target examples:
+```bash
+./scripts/port-forwarding.sh tekton 9097
+./scripts/port-forwarding.sh argocd 8080
 ./scripts/port-forwarding.sh grafana 3000
+./scripts/port-forwarding.sh app 3000
 ```
 
-Open `http://localhost:3000`.
+## Access URLs
 
-Provisioned Grafana datasources:
+- Tekton Dashboard: `http://localhost:9097`
+- ArgoCD UI: `https://localhost:8080`
+- Grafana: `http://localhost:3000`
+- App: `http://localhost:3000`
+- Mongo Express: `http://localhost:8081`
 
-- `Thanos` (metrics)
-- `Loki` (logs)
-- `Tempo` (traces)
-
-Default Grafana credentials:
-
-- user: `admin`
-- password: `admin`
-
-## Security Notes (Important)
-
-- Do not commit real credentials. `.env` is ignored by git.
-- The Tekton secret manifests under `manifests/tekton/secrets/` contain placeholders and are not safe to commit with real values.
-- Security manifests are under `manifests/security/`.
-- Install and enforce ESO + Kyverno + cosign verification with:
-
+Get ArgoCD admin password:
 ```bash
-./scripts/k8s/start-security.sh \
-  --vault-addr https://vault.example.com \
-  --vault-token-namespace external-secrets \
-  --vault-token-secret vault-token \
-  --cosign-public-key-file ./cosign.pub
+./scripts/k8s/argocd-password.sh
 ```
 
-- Use `--audit-policy` if you want policy in audit mode; default is enforce mode.
+## CI/CD Behavior
 
-## Scripts
+Pipeline key flow:
+- clone source
+- restore cache
+- unit test
+- optional integration test
+- SCA scan
+- optional SonarQube
+- build + push image (kaniko)
+- sign image (cosign, optional but enabled by default)
+- patch ArgoCD app image + trigger sync
+- summary notification
 
-- `./scripts/docker/docker-start.sh`: brings up Docker Compose (`up --build`)
-- `./scripts/docker/docker-stop.sh`: brings down Docker Compose (`down`)
-- `./scripts/tests/tests.sh`: runs `npm test`, `npm run test:integration`, and `npm run perf`
-- `./scripts/k8s/start-tekton.sh`: automates Tekton install + manifests + secret setup
-- `./scripts/k8s/start-argo.sh`: picks image, creates/updates ArgoCD `Application`, and deploys to cluster
-- `./scripts/k8s/promote.sh`: promotes image tags between `dev -> staging -> prod` environment configs
-- `./scripts/k8s/gitops-rollback.sh`: GitOps-native rollback (revert + optional push + Argo refresh)
-- `./scripts/k8s/cicd-status.sh`: prints Tekton + ArgoCD health summary and can notify a webhook
-- `./scripts/k8s/sign-image.sh`: signs container images with Cosign
-- `./scripts/k8s/start-security.sh`: installs External Secrets + Kyverno and applies enforceable security manifests
-- `./scripts/k8s/registry-preload.sh`: preloads local images into Docker Desktop/kind nodes
-- `./scripts/k8s/registry-retention.sh`: prunes old local registry tags while keeping newest N
-- `./scripts/k8s/start-observability.sh`: deploys OTel, Prometheus+Thanos, Loki, Tempo, and Grafana
-- `./scripts/k8s/start-helm-app.sh`: deploys sample-node-app with Helm values (`dev|staging|prod`)
+This means ArgoCD can deploy the new image immediately after Tekton build succeeds.
+With signing enabled, ArgoCD sync runs only after the signature step succeeds.
+
+## Pre-merge Policy Gates
+
+GitHub Actions enforces:
+- app CI (`lint`, `test`, `perf`, `audit`)
+- policy gates:
+  - `kustomize build` on GitOps overlays (`dev|staging|prod`) plus security/observability
+  - `kubeconform` schema validation
+  - `conftest` policy checks (`policy/conftest`)
+  - `kyverno test` checks (`policy/kyverno`)
+
+## GitOps Promotion and Rollback
+
+Promote image tag between env overlays:
+```bash
+./scripts/k8s/promote.sh --from dev --to staging --approved --verify-push
+./scripts/k8s/promote.sh --from staging --to prod --approved --verify-push
+```
+
+GitOps-native rollback:
+```bash
+./scripts/k8s/gitops-rollback.sh --env dev --push
+```
+
+## Observability Usage
+
+- Metrics: Grafana datasource `Thanos`
+- Logs: Grafana datasource `Loki`
+- Traces: Grafana datasource `Tempo`
+
+If logs are empty in Grafana, check:
+- `promtail` pods running in `observability`
+- app pods exist and produce stdout logs
+- Loki datasource is healthy in Grafana
+
+## Security Lifecycle
+
+Start:
+```bash
+./scripts/k8s/start-security.sh
+```
+
+Stop:
+```bash
+./scripts/k8s/stop-security.sh
+```
+
+Full cleanup including namespaces:
+```bash
+./scripts/k8s/stop-security.sh --delete-namespaces --force
+```
+
+### Where Secrets Are Stored
+
+- Source of truth: **Vault KV** (`kv/ci/*`) accessed through External Secrets Operator.
+- In-cluster synced secrets:
+  - `default/docker-credentials`
+  - `default/sonarqube-credentials`
+  - `default/cosign-key`
+- Auth bootstrap secrets (depending on mode):
+  - token mode: `external-secrets/vault-token`
+  - approle mode: `external-secrets/vault-approle`
+- Kyverno public key secret (optional helper): `kyverno/cosign-public-key`
+
+Important:
+- Kubernetes Secrets are runtime copies created by External Secrets; do not treat Git manifests as secret storage.
+- For strict signed-image enforcement, provide a real cosign public key file to `start-security.sh`.
+
+## Teardown / Cleanup
+
+Stop Tekton + ArgoCD:
+```bash
+./scripts/k8s/k8s-stop.sh
+```
+
+Force cleanup of stuck Tekton PVC finalizers:
+```bash
+./scripts/k8s/k8s-stop.sh --force
+```
+
+Stop observability:
+```bash
+./scripts/k8s/stop-observability.sh
+```
+
+Delete failed Tekton runs quickly:
+```bash
+./scripts/k8s/cleanup-failed-tekton-pipelines.sh
+```
+
+## Troubleshooting
+
+### ArgoCD shows `revision HEAD must be resolved`
+
+Cause:
+- app references a revision/path not present in remote git.
+
+Fix:
+```bash
+git push origin main
+./scripts/k8s/start-argo.sh --revision main --env dev
+```
+
+### Tekton run hangs/slow on tests
+
+Use fast default path (integration off):
+```bash
+RUN_INTEGRATION_TESTS=false ./scripts/k8s/start-tekton.sh --skip-install
+```
+
+Enable integration only when needed:
+```bash
+RUN_INTEGRATION_TESTS=true INTEGRATION_TESTS_STRICT=true ./scripts/k8s/start-tekton.sh --skip-install
+```
+
+### Kyverno pods stuck `ImagePullBackOff`
+
+Use stable registry override:
+```bash
+./scripts/k8s/start-security.sh --kyverno-image-registry ghcr.io
+```
+
+### prerequisites security conflict with Helm
+
+`prerequisites.sh` applies security CRDs with server-side apply + force-conflicts to avoid both SSA manager conflicts and oversized annotation errors.
+
+### New image fails with `ImagePullBackOff` after Tekton build
+
+Cause:
+- New local-registry tag is not yet available on cluster nodes.
+
+Fix:
+```bash
+./scripts/k8s/registry-preload.sh --image host.docker.internal:5000/sample-node-app:<tag>
+kubectl -n default rollout restart deployment/sample-node-app
+kubectl -n default rollout status deployment/sample-node-app
+```
+
+## Script Catalog
+
+All scripts support `--help`.
+
+Docker:
+- `./scripts/docker/docker-start.sh`
+- `./scripts/docker/docker-stop.sh`
+
+Core K8s:
+- `./scripts/prerequisites.sh`
+- `./scripts/port-forwarding.sh`
+
+Tekton:
+- `./scripts/k8s/start-tekton.sh`
+- `./scripts/k8s/cleanup-failed-tekton-pipelines.sh`
+
+ArgoCD/GitOps:
+- `./scripts/k8s/start-argo.sh`
+- `./scripts/k8s/promote.sh`
+- `./scripts/k8s/gitops-rollback.sh`
+- `./scripts/k8s/argocd-password.sh`
+
+Observability:
+- `./scripts/k8s/start-observability.sh`
+- `./scripts/k8s/stop-observability.sh`
+
+Security:
+- `./scripts/k8s/start-security.sh`
+- `./scripts/k8s/stop-security.sh`
+- `./scripts/k8s/sign-image.sh`
+- `./scripts/k8s/vault-bootstrap-token.sh`
+- `./scripts/k8s/vault-bootstrap-approle.sh`
+- `./scripts/k8s/vault-bootstrap-jwt.sh`
+
+Global teardown/status:
+- `./scripts/k8s/k8s-stop.sh`
+- `./scripts/k8s/cicd-status.sh`
