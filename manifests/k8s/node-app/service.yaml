@@ -7,6 +7,6 @@ spec:
   selector:
     app: sample-node-app
   ports:
-    - port: 3000
-      targetPort: 3000
+    - port: 3001
+      targetPort: 3001
       nodePort: 30001

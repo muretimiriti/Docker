@@ -116,12 +116,12 @@ run_smoke_check() {
   local job_name="promote-smoke-${service_name}-$(date +%s)"
 
   kubectl -n "$namespace" create job "$job_name" --image=curlimages/curl:8.10.1 \
-    -- sh -c "curl -fsS \"http://${service_name}:3000${path}\" >/dev/null" >/dev/null
+    -- sh -c "curl -fsS \"http://${service_name}:3001${path}\" >/dev/null" >/dev/null
 
   if ! kubectl -n "$namespace" wait --for=condition=complete "job/$job_name" --timeout=90s >/dev/null 2>&1; then
     kubectl -n "$namespace" logs "job/$job_name" >/dev/null 2>&1 || true
     kubectl -n "$namespace" delete job "$job_name" --ignore-not-found >/dev/null 2>&1 || true
-    die "Smoke precheck failed against http://${service_name}:3000${path} in namespace $namespace"
+    die "Smoke precheck failed against http://${service_name}:3001${path} in namespace $namespace"
   fi
 
   kubectl -n "$namespace" delete job "$job_name" --ignore-not-found >/dev/null 2>&1 || true

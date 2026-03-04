@@ -29,7 +29,7 @@ Examples:
   ./scripts/port-forwarding.sh tekton 9097
   ./scripts/port-forwarding.sh argocd 8080
   ./scripts/port-forwarding.sh grafana 3000
-  ./scripts/port-forwarding.sh app 3000
+  ./scripts/port-forwarding.sh app 3001
 USAGE
 }
 
@@ -121,7 +121,7 @@ case "$TARGET" in
     ;;
   app)
     [[ -z "$LOCAL_PORT_OVERRIDE" ]] || valid_port "$LOCAL_PORT_OVERRIDE" || die "Invalid local port: $LOCAL_PORT_OVERRIDE"
-    forward_one "app" "$APP_NAMESPACE" "sample-node-app" "${LOCAL_PORT_OVERRIDE:-3000}" "3000"
+    forward_one "app" "$APP_NAMESPACE" "sample-node-app" "${LOCAL_PORT_OVERRIDE:-3001}" "3001"
     ;;
   mongo-express)
     [[ -z "$LOCAL_PORT_OVERRIDE" ]] || valid_port "$LOCAL_PORT_OVERRIDE" || die "Invalid local port: $LOCAL_PORT_OVERRIDE"
@@ -158,7 +158,7 @@ case "$TARGET" in
       started=$((started + 1))
     fi
 
-    if forward_one "app" "$APP_NAMESPACE" "sample-node-app" "3000" "3000" "background"; then
+    if forward_one "app" "$APP_NAMESPACE" "sample-node-app" "3001" "3001" "background"; then
       pids+=("$!")
       started=$((started + 1))
     fi

@@ -30,11 +30,11 @@ spec:
           image: host.docker.internal:5000/sample-node-app:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 3000
+            - containerPort: 3001
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 3000
+              port: 3001
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 2
@@ -42,7 +42,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 3000
+              port: 3001
             initialDelaySeconds: 15
             periodSeconds: 15
             timeoutSeconds: 2

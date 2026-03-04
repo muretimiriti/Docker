@@ -166,7 +166,7 @@ Single target examples:
 ./scripts/port-forwarding.sh tekton 9097
 ./scripts/port-forwarding.sh argocd 8080
 ./scripts/port-forwarding.sh grafana 3000
-./scripts/port-forwarding.sh app 3000
+./scripts/port-forwarding.sh app 3001
 ```
 
 ## Access URLs
@@ -174,7 +174,7 @@ Single target examples:
 - Tekton Dashboard: `http://localhost:9097`
 - ArgoCD UI: `https://localhost:8080`
 - Grafana: `http://localhost:3000`
-- App: `http://localhost:3000`
+- App: `http://localhost:3001`
 - Mongo Express: `http://localhost:8081`
 
 Get ArgoCD admin password:

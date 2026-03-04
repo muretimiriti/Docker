@@ -187,7 +187,7 @@ run_smoke_test() {
   job_name="smoke-${deployment_name}-$(date +%s)"
 
   kubectl -n "$namespace" create job "$job_name" --image=curlimages/curl:8.10.1 \
-    -- sh -c "curl -fsS \"http://${deployment_name}:3000${path}\" >/dev/null" >/dev/null
+    -- sh -c "curl -fsS \"http://${deployment_name}:3001${path}\" >/dev/null" >/dev/null
 
   if ! kubectl -n "$namespace" wait --for=condition=complete "job/$job_name" --timeout="${timeout_seconds}s" >/dev/null 2>&1; then
     kubectl -n "$namespace" logs "job/$job_name" >/dev/null 2>&1 || true
@@ -573,7 +573,7 @@ if [[ "$WAIT_ROLLOUT" == "true" ]]; then
   fi
 
   if [[ "$SMOKE_TEST_ENABLED" == "true" ]]; then
-    log "running smoke test: http://${DEPLOYMENT_NAME}:3000${SMOKE_PATH}"
+    log "running smoke test: http://${DEPLOYMENT_NAME}:3001${SMOKE_PATH}"
     if ! run_smoke_test "$DEST_NAMESPACE" "$DEPLOYMENT_NAME" "$SMOKE_PATH" "$SMOKE_TIMEOUT"; then
       rollback_deployment "$DEST_NAMESPACE" "$DEPLOYMENT_NAME"
       notify "failed" "smoke test failed for deployment/$DEPLOYMENT_NAME"
