@@ -272,7 +272,7 @@ if [[ "$APPLY_SECURITY_MANIFESTS" == "true" ]]; then
   cp "$ROOT_DIR/manifests/security/kyverno/verify-cosign-policy.yaml" "$policy_file"
   if [[ -n "$COSIGN_PUBLIC_KEY_FILE" ]]; then
     pem_body="$(sed 's/[\\/&]/\\&/g' "$COSIGN_PUBLIC_KEY_FILE" | sed ':a;N;$!ba;s/\n/\\n                      /g')"
-    sed -i '' "s/REPLACE_WITH_COSIGN_PUBLIC_KEY/$pem_body/g" "$policy_file"
+    sed -i "s/REPLACE_WITH_COSIGN_PUBLIC_KEY/$pem_body/g" "$policy_file"
   fi
 
   if [[ "$ENFORCE_POLICY" == "true" ]]; then

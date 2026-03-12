@@ -1,9 +1,9 @@
-
 #!/bin/bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
+VAULT_CLUSTER_ADDR="${VAULT_CLUSTER_ADDR:-http://vault.vault.svc.cluster.local:8200}"
 BOOTSTRAP_SECRET_NAME="${BOOTSTRAP_SECRET_NAME:-vault-bootstrap-token}"
 BOOTSTRAP_SECRET_NS="${BOOTSTRAP_SECRET_NS:-external-secrets}"
 COSIGN_TMP_KEY="${COSIGN_TMP_KEY:-/tmp/cosign-public.pub}"
@@ -11,21 +11,37 @@ COSIGN_TMP_KEY="${COSIGN_TMP_KEY:-/tmp/cosign-public.pub}"
 log() { echo "[run-security] $*"; }
 die() { echo "[run-security] ERROR: $*" >&2; exit 1; }
 
+# --- Auto port-forward Vault if not reachable ---
+if ! curl -sf "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; then
+  log "Vault not reachable at $VAULT_ADDR, starting port-forward..."
+  kubectl port-forward svc/vault -n vault 8200:8200 >/dev/null 2>&1 &
+  PF_PID=$!
+  trap 'kill $PF_PID 2>/dev/null; rm -f "$COSIGN_TMP_KEY" && log "cleanup done"' EXIT
+  sleep 3
+  curl -sf "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1 || die "Vault still not reachable after port-forward"
+  log "port-forward established (pid $PF_PID)"
+else
+  log "Vault already reachable at $VAULT_ADDR"
+  trap 'rm -f "$COSIGN_TMP_KEY" && log "cleaned up temp cosign key"' EXIT
+fi
+
+# --- Pull bootstrap token from Kubernetes secret ---
 log "fetching bootstrap token from k8s secret '$BOOTSTRAP_SECRET_NAME'..."
 VAULT_BOOTSTRAP_TOKEN=$(kubectl get secret "$BOOTSTRAP_SECRET_NAME" -n "$BOOTSTRAP_SECRET_NS" -o jsonpath='{.data.token}' | base64 -d) || die "could not read secret $BOOTSTRAP_SECRET_NAME from namespace $BOOTSTRAP_SECRET_NS"
 
+# --- Pull role-id from Vault ---
 log "fetching role-id from Vault..."
 ROLE_ID=$(VAULT_ADDR="$VAULT_ADDR" VAULT_TOKEN="$VAULT_BOOTSTRAP_TOKEN" vault kv get -field=role-id kv/external-secrets/approle) || die "could not read role-id from Vault"
 log "role-id fetched successfully"
 
+# --- Pull cosign public key from Vault ---
 log "fetching cosign public key from Vault..."
 VAULT_ADDR="$VAULT_ADDR" VAULT_TOKEN="$VAULT_BOOTSTRAP_TOKEN" vault kv get -field=public-key kv/external-secrets/cosign > "$COSIGN_TMP_KEY" || die "could not read cosign public key from Vault"
 log "cosign public key written to $COSIGN_TMP_KEY"
 
-trap 'rm -f "$COSIGN_TMP_KEY" && log "cleaned up temp cosign key"' EXIT
-
+# --- Run the main security script ---
 exec "$SCRIPT_DIR/start-security.sh" \
-  --vault-addr "$VAULT_ADDR" \
+  --vault-addr "$VAULT_CLUSTER_ADDR" \
   --vault-approle-role-id "$ROLE_ID" \
   --cosign-public-key-file "$COSIGN_TMP_KEY" \
   "$@"

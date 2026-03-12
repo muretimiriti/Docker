@@ -12,4 +12,6 @@ yarn-error.log*
 !.env.example
 coverage/
 
-manifests/tekton/secrets/docker-credentials.yaml
+manifests/tekton/secrets/docker-credentials.yamlcosign.key
+.cosign.key
+.cosign.pub
